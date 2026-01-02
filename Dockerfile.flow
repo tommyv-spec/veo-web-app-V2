@@ -1,0 +1,37 @@
+# Dockerfile.flow - Flow Worker Service
+# Uses Playwright's official Docker image for reliable browser automation
+
+# Use Playwright's official Python image (includes browsers + dependencies)
+FROM mcr.microsoft.com/playwright/python:v1.48.0-noble
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+COPY requirements-flow.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements-flow.txt
+
+# Copy application code
+COPY . .
+
+# Create temp directories
+RUN mkdir -p /app/temp /app/downloads
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV FLOW_TEMP_DIR=/app/temp
+ENV FLOW_DOWNLOAD_DIR=/app/downloads
+
+# Run as non-root for security (Playwright image has pwuser)
+USER pwuser
+
+# Health check - just verify Python runs
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "print('healthy')" || exit 1
+
+# Default command - run Flow worker
+CMD ["python", "flow_worker.py"]
