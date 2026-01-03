@@ -1217,6 +1217,15 @@ async def create_job(
     if request.last_frame_index is not None:
         print(f"[main.py] Last frame index: {request.last_frame_index}")
     
+    # Determine backend based on user's API keys
+    from backends.selector import choose_backend_for_job, BackendType
+    
+    # Get user's API keys from the request
+    user_api_keys = api_keys_data.get("gemini_keys", []) if api_keys_data else []
+    backend = choose_backend_for_job(db, current_user.id, user_api_keys)
+    
+    print(f"[main.py] Backend selected: {backend.value} (user keys: {len(user_api_keys)})")
+    
     job = Job(
         id=job_id,
         user_id=current_user.id,  # Associate job with current user
@@ -1231,13 +1240,25 @@ async def create_job(
         images_dir=str(images_dir),
         output_dir=str(output_dir),
         total_clips=len(request.dialogue_lines),
+        backend=backend.value,  # Set backend type
     )
     
     db.add(job)
     db.commit()
     db.refresh(job)
     
-    add_job_log(db, job_id, "Job created", "INFO", "system")
+    add_job_log(db, job_id, f"Job created (backend: {backend.value})", "INFO", "system")
+    
+    # If Flow backend, enqueue to Redis
+    if backend == BackendType.FLOW:
+        try:
+            from flow_worker import enqueue_flow_job
+            enqueue_flow_job(job_id)
+            add_job_log(db, job_id, "Job queued for Flow processing", "INFO", "flow")
+            print(f"[main.py] Job {job_id} queued for Flow backend")
+        except Exception as e:
+            print(f"[main.py] Failed to enqueue Flow job: {e}")
+            add_job_log(db, job_id, f"Failed to enqueue Flow job: {e}", "ERROR", "flow")
     
     return JobResponse(
         id=job.id,
