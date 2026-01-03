@@ -18,13 +18,15 @@ RUN pip install --no-cache-dir -r requirements-flow.txt
 # Copy application code
 COPY . .
 
-# Create temp directories
-RUN mkdir -p /app/temp /app/downloads
+# Create directories with proper permissions BEFORE switching user
+RUN mkdir -p /app/data /app/data/uploads /app/data/outputs /app/temp /app/downloads \
+    && chown -R pwuser:pwuser /app
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV FLOW_TEMP_DIR=/app/temp
 ENV FLOW_DOWNLOAD_DIR=/app/downloads
+ENV DATA_DIR=/app/data
 
 # Run as non-root for security (Playwright image has pwuser)
 USER pwuser
