@@ -299,20 +299,14 @@ class JobWorker:
             return
         
         with get_db() as db:
-            # Get pending jobs - EXPLICITLY exclude Flow backend
-            from sqlalchemy import or_, and_
+            from sqlalchemy import func
             
-            # Filter for API jobs only - exclude 'flow' backend explicitly
+            # Get pending jobs - EXPLICITLY exclude Flow backend
+            # Use COALESCE to treat NULL/empty as 'api', then exclude 'flow'
             pending = db.query(Job).filter(
                 Job.status == JobStatus.PENDING.value,
-                or_(
-                    Job.backend == "api",
-                    Job.backend == None,
-                    Job.backend == ""  # Handle empty string case
-                )
-            ).filter(
-                # Double-filter: explicitly exclude flow
-                or_(Job.backend != "flow", Job.backend == None)
+                # COALESCE(LOWER(backend), 'api') != 'flow'
+                func.coalesce(func.lower(Job.backend), 'api') != 'flow'
             ).order_by(Job.created_at.asc()).limit(
                 self.max_workers - len(self.running_jobs)
             ).all()
@@ -321,7 +315,8 @@ class JobWorker:
             if pending:
                 print(f"[Worker] Found {len(pending)} API jobs to process", flush=True)
                 for j in pending:
-                    print(f"[Worker] Processing job {j.id[:8]} (backend={getattr(j, 'backend', 'N/A')})", flush=True)
+                    backend_val = getattr(j, 'backend', 'N/A')
+                    print(f"[Worker] Processing job {j.id[:8]} (backend={backend_val})", flush=True)
             
             for job in pending:
                 if job.id not in self.running_jobs:
@@ -337,7 +332,8 @@ class JobWorker:
             job = db.query(Job).filter(Job.id == job_id).first()
             if job:
                 backend = getattr(job, 'backend', None)
-                if backend == 'flow':
+                backend_lower = str(backend).lower() if backend else ''
+                if backend_lower == 'flow':
                     print(f"[Worker] BLOCKED: Job {job_id[:8]} is Flow backend - NOT starting", flush=True)
                     return
                 print(f"[Worker] Starting job {job_id[:8]} (backend={backend})", flush=True)
