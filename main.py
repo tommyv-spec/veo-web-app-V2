@@ -1265,15 +1265,17 @@ async def create_job(
     
     add_job_log(db, job_id, f"Job created (backend: {backend.value})", "INFO", "system")
     
-    # If Flow backend, upload images to R2 and enqueue to Redis
+    # If Flow backend, upload images to R2, generate prompts, and enqueue to Redis
     if backend == BackendType.FLOW:
         try:
             # Upload images to R2 so Flow worker can access them
             from backends.storage import is_storage_configured, get_storage
             
+            uploaded_frames = []
+            first_frame_local_path = None
+            
             if is_storage_configured():
                 storage = get_storage()
-                uploaded_frames = []
                 
                 # Get all images from the job's images directory
                 if images_dir.exists():
@@ -1281,6 +1283,10 @@ async def create_job(
                     for img_file in sorted(images_dir.iterdir()):
                         if img_file.suffix.lower() in image_extensions:
                             try:
+                                # Keep track of first frame for analysis
+                                if not first_frame_local_path:
+                                    first_frame_local_path = img_file
+                                
                                 # Upload to R2
                                 remote_key = storage.upload_job_frame(
                                     job_id, 
@@ -1294,27 +1300,119 @@ async def create_job(
                 
                 if uploaded_frames:
                     add_job_log(db, job_id, f"Uploaded {len(uploaded_frames)} frames to storage", "INFO", "flow")
-                    
-                    # Create clips with frame references
-                    for i, line in enumerate(dialogue_list):
-                        frame_key = uploaded_frames[min(i, len(uploaded_frames) - 1)] if uploaded_frames else None
-                        clip = Clip(
-                            job_id=job_id,
-                            clip_index=i,
-                            dialogue_id=line.get("id", i + 1),
-                            dialogue_text=line.get("text", ""),
-                            status=ClipStatus.PENDING.value,
-                            start_frame=frame_key,  # Store R2 key
-                            end_frame=None,
-                        )
-                        db.add(clip)
-                    db.commit()
-                    print(f"[main.py] Created {len(dialogue_list)} clips with frame references")
                 else:
                     print(f"[main.py] WARNING: No frames uploaded to R2 for Flow job")
             else:
                 print(f"[main.py] WARNING: Storage not configured - Flow job may fail to access images")
                 add_job_log(db, job_id, "WARNING: Object storage not configured", "WARNING", "flow")
+                # Still get the first frame for prompt generation
+                if images_dir.exists():
+                    image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+                    for img_file in sorted(images_dir.iterdir()):
+                        if img_file.suffix.lower() in image_extensions:
+                            first_frame_local_path = img_file
+                            break
+            
+            # === Generate prompts using the same engine as API backend ===
+            from pathlib import Path
+            from config import VideoConfig
+            from veo_generator import (
+                build_prompt,
+                analyze_frame,
+                process_user_context,
+                get_default_voice_profile,
+            )
+            
+            # Parse config for prompt generation
+            config_data = json.loads(job.config_json) if job.config_json else {}
+            language = config_data.get("language", "English")
+            
+            video_config = VideoConfig(
+                aspect_ratio=config_data.get("aspect_ratio", "9:16"),
+                resolution=config_data.get("resolution", "720p"),
+                duration=config_data.get("duration", "8"),
+                language=language,
+                use_interpolation=config_data.get("use_interpolation", True),
+                use_openai_prompt_tuning=config_data.get("use_openai_prompt_tuning", True),
+                use_frame_vision=config_data.get("use_frame_vision", True),
+                custom_prompt=config_data.get("custom_prompt", ""),
+                user_context=config_data.get("user_context", ""),
+            )
+            
+            # Get OpenAI key from environment (web app already has it)
+            openai_key = os.environ.get("OPENAI_API_KEY")
+            
+            # Process user context once for all clips
+            user_context_enriched = {}
+            if video_config.user_context and openai_key:
+                try:
+                    print(f"[main.py] Processing user context for Flow job...")
+                    user_context_enriched = process_user_context(
+                        video_config.user_context,
+                        language,
+                        openai_key
+                    )
+                except Exception as e:
+                    print(f"[main.py] User context processing failed: {e}")
+            
+            # Analyze first frame for voice profile
+            frame_analysis = {}
+            if first_frame_local_path and openai_key and video_config.use_frame_vision:
+                try:
+                    print(f"[main.py] Analyzing frame for voice profile...")
+                    frame_analysis = analyze_frame(str(first_frame_local_path), openai_key)
+                except Exception as e:
+                    print(f"[main.py] Frame analysis failed: {e}")
+            
+            # Get voice profile
+            voice_profile = get_default_voice_profile(language, video_config.user_context)
+            
+            # Create clips with generated prompts
+            for i, line in enumerate(dialogue_list):
+                frame_key = uploaded_frames[min(i, len(uploaded_frames) - 1)] if uploaded_frames else None
+                dialogue_text = line.get("text", "")
+                
+                # Generate prompt using same function as API backend
+                try:
+                    prompt_text = build_prompt(
+                        dialogue_line=dialogue_text,
+                        start_frame_path=Path(first_frame_local_path) if first_frame_local_path else None,
+                        end_frame_path=None,
+                        clip_index=i,
+                        language=language,
+                        voice_profile=voice_profile,
+                        config=video_config,
+                        openai_key=openai_key,
+                        frame_analysis=frame_analysis,
+                        user_context_override=user_context_enriched,
+                    )
+                    print(f"[main.py] Generated prompt for clip {i}: {len(prompt_text)} chars")
+                except Exception as e:
+                    print(f"[main.py] Prompt generation failed for clip {i}, using fallback: {e}")
+                    # Fallback prompt
+                    prompt_text = f"""Medium shot, static locked-off camera, sharp focus on subject.
+The subject in the frame speaks directly to camera with natural expression.
+The character says in {language}, "{dialogue_text}"
+Voice: natural voice, clear and authentic.
+Style: Raw realistic footage, natural lighting, photorealistic.
+No subtitles, no text overlays. No background music. Only the speaker's voice.
+(no subtitles)"""
+                
+                clip = Clip(
+                    job_id=job_id,
+                    clip_index=i,
+                    dialogue_id=line.get("id", i + 1),
+                    dialogue_text=dialogue_text,
+                    status=ClipStatus.PENDING.value,
+                    start_frame=frame_key,  # Store R2 key
+                    end_frame=None,
+                    prompt_text=prompt_text,  # Store the generated prompt!
+                )
+                db.add(clip)
+            
+            db.commit()
+            print(f"[main.py] Created {len(dialogue_list)} clips with prompts for Flow job")
+            add_job_log(db, job_id, f"Generated prompts for {len(dialogue_list)} clips", "INFO", "flow")
             
             # Enqueue job
             from flow_worker import enqueue_flow_job
