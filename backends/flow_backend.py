@@ -249,6 +249,56 @@ class FlowBackend:
             pass
         return False
     
+    def _screenshot(self, name: str, upload: bool = True) -> Optional[str]:
+        """
+        Take a screenshot and optionally upload to R2.
+        
+        Args:
+            name: Screenshot name (without extension)
+            upload: Whether to upload to R2 and return URL
+            
+        Returns:
+            Presigned URL if uploaded, local path otherwise
+        """
+        local_path = f"/tmp/flow_{name}.png"
+        
+        try:
+            self._page.screenshot(path=local_path)
+            print(f"[Flow] Screenshot saved: {local_path}", flush=True)
+        except Exception as e:
+            print(f"[Flow] Failed to take screenshot: {e}", flush=True)
+            return None
+        
+        if not upload:
+            return local_path
+        
+        # Upload to R2 and get presigned URL
+        try:
+            from .storage import is_storage_configured, get_storage
+            
+            if not is_storage_configured():
+                print(f"[Flow] Storage not configured - screenshot only saved locally", flush=True)
+                return local_path
+            
+            storage = get_storage()
+            
+            # Create unique key with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            remote_key = f"debug/screenshots/{timestamp}_{name}.png"
+            
+            # Upload
+            storage.upload_file(local_path, remote_key, content_type="image/png")
+            
+            # Get presigned URL (valid for 24 hours)
+            url = storage.get_presigned_url(remote_key, expires_in=86400)
+            
+            print(f"[Flow] 📸 Screenshot uploaded: {url}", flush=True)
+            return url
+            
+        except Exception as e:
+            print(f"[Flow] Failed to upload screenshot: {e}", flush=True)
+            return local_path
+    
     def _check_login_required(self) -> bool:
         """Check if Google login is required"""
         current_url = self._page.url.lower()
@@ -399,11 +449,7 @@ class FlowBackend:
             project_url = self._page.url
         
         # Take screenshot to verify project is ready
-        try:
-            self._page.screenshot(path="/tmp/flow_project_created.png")
-            print("[Flow] Screenshot saved: /tmp/flow_project_created.png", flush=True)
-        except Exception:
-            pass
+        self._screenshot("project_created")
         
         return project_url
     
@@ -444,7 +490,7 @@ class FlowBackend:
         if btn.count() == 0:
             print(f"[Flow] WARNING: Button not found with selector: {button_selector}", flush=True)
             # Take screenshot
-            self._page.screenshot(path=f"/tmp/flow_button_not_found_{frame_name}.png")
+            self._screenshot(f"button_not_found_{frame_name.replace(' ', '_')}")
             raise RuntimeError(f"Add frame button not found")
         
         # Try to capture file chooser when clicking the button
@@ -491,11 +537,11 @@ class FlowBackend:
                     file_chooser = fc_info.value
                 except Exception as e2:
                     print(f"[Flow] Failed to get file chooser from Upload button: {e2}", flush=True)
-                    self._page.screenshot(path=f"/tmp/flow_upload_failed_{frame_name}.png")
+                    self._screenshot(f"upload_failed_{frame_name.replace(' ', '_')}")
                     raise
             else:
                 print(f"[Flow] No Upload button found", flush=True)
-                self._page.screenshot(path=f"/tmp/flow_no_upload_btn_{frame_name}.png")
+                self._screenshot(f"no_upload_btn_{frame_name.replace(' ', '_')}")
                 raise RuntimeError("Could not find way to upload file")
         
         # Upload the file
@@ -619,12 +665,7 @@ class FlowBackend:
         except Exception as e:
             print(f"[Flow] Error during file upload: {e}", flush=True)
             # Take screenshot for debugging
-            try:
-                screenshot_path = f"/tmp/flow_upload_error_{frame_name}.png"
-                self._page.screenshot(path=screenshot_path)
-                print(f"[Flow] Debug screenshot saved: {screenshot_path}", flush=True)
-            except Exception:
-                pass
+            self._screenshot(f"upload_error_{frame_name.replace(' ', '_')}")
             raise
         
         time.sleep(3)
@@ -639,10 +680,7 @@ class FlowBackend:
         except Exception as e:
             print(f"[Flow] Crop dialog not found: {e}", flush=True)
             # Take screenshot
-            try:
-                self._page.screenshot(path=f"/tmp/flow_crop_error_{frame_name}.png")
-            except Exception:
-                pass
+            self._screenshot(f"crop_error_{frame_name.replace(' ', '_')}")
             raise
         
         time.sleep(1)
@@ -722,10 +760,7 @@ class FlowBackend:
                 print(f"[Flow] Setting up first clip with frames...", flush=True)
                 
                 # Take screenshot before mode selection
-                try:
-                    self._page.screenshot(path="/tmp/flow_before_mode_select.png")
-                except Exception:
-                    pass
+                self._screenshot("before_mode_select")
                 
                 # Select Frames to Video mode - with retries
                 print("[Flow] Selecting 'Frames to Video' mode...", flush=True)
@@ -755,10 +790,7 @@ class FlowBackend:
                     if not mode_button:
                         print("[Flow] Mode dropdown not found, trying to locate any dropdown...", flush=True)
                         # Try clicking on the area where the dropdown usually is
-                        try:
-                            self._page.screenshot(path=f"/tmp/flow_no_dropdown_attempt_{attempt}.png")
-                        except Exception:
-                            pass
+                        self._screenshot(f"no_dropdown_attempt_{attempt}")
                         time.sleep(2)
                         continue
                     
@@ -802,14 +834,11 @@ class FlowBackend:
                     else:
                         print("[Flow] Frame buttons not found, mode may not have changed", flush=True)
                         # Take debug screenshot
-                        try:
-                            self._page.screenshot(path=f"/tmp/flow_mode_attempt_{attempt}.png")
-                        except Exception:
-                            pass
+                        self._screenshot(f"mode_attempt_{attempt}")
                 
                 if not mode_changed:
                     print("[Flow] ERROR: Failed to switch to 'Frames to Video' mode after 3 attempts!", flush=True)
-                    self._page.screenshot(path="/tmp/flow_mode_failed.png")
+                    self._screenshot("mode_failed")
                     raise RuntimeError("Could not switch to Frames to Video mode")
                 
                 self._check_and_dismiss_popup()
@@ -874,7 +903,7 @@ class FlowBackend:
                     textarea.wait_for(state="visible", timeout=5000)
                 except Exception as e:
                     print(f"[Flow] Textarea not immediately visible: {e}", flush=True)
-                    self._page.screenshot(path="/tmp/flow_no_textarea.png")
+                    self._screenshot("no_textarea")
                 
                 # Click to focus
                 textarea.click()
@@ -913,11 +942,7 @@ class FlowBackend:
                     time.sleep(1)
                 
                 # Take screenshot showing prompt entered
-                try:
-                    self._page.screenshot(path="/tmp/flow_prompt_entered.png")
-                    print("[Flow] Screenshot saved: /tmp/flow_prompt_entered.png", flush=True)
-                except Exception:
-                    pass
+                self._screenshot("prompt_entered")
                 
                 # Brief wait for UI to process
                 time.sleep(2)
@@ -968,11 +993,7 @@ class FlowBackend:
                 print(f"[Flow] Could not verify prompt: {e}", flush=True)
             
             # Take screenshot before Generate
-            try:
-                self._page.screenshot(path="/tmp/flow_before_generate.png")
-                print("[Flow] Screenshot saved: /tmp/flow_before_generate.png", flush=True)
-            except Exception:
-                pass
+            self._screenshot("before_generate")
             
             # === CLICK GENERATE BUTTON ===
             # The Generate button is the arrow icon (→) at the bottom right of the prompt area
@@ -1063,7 +1084,7 @@ class FlowBackend:
             
             if not generate_clicked:
                 print("[Flow] ERROR: All Generate button methods failed!", flush=True)
-                self._page.screenshot(path="/tmp/flow_generate_failed.png")
+                self._screenshot("generate_failed")
                 raise RuntimeError("Could not click Generate button")
             
             # Wait for generation to start
@@ -1071,11 +1092,7 @@ class FlowBackend:
             time.sleep(5)
             
             # Take screenshot after clicking
-            try:
-                self._page.screenshot(path="/tmp/flow_after_generate.png")
-                print("[Flow] Screenshot saved: /tmp/flow_after_generate.png", flush=True)
-            except Exception:
-                pass
+            self._screenshot("after_generate")
             
             # Check for error messages
             error_messages = [
@@ -1195,13 +1212,7 @@ class FlowBackend:
                     
                     # Debug: log what's visible on the page
                     if attempt == 30:
-                        try:
-                            # Take screenshot for debugging
-                            screenshot_path = os.path.join(self.download_dir, f"debug_clip_{clip.clip_index}.png")
-                            self._page.screenshot(path=screenshot_path)
-                            print(f"[Flow] Debug screenshot saved: {screenshot_path}", flush=True)
-                        except Exception:
-                            pass
+                        self._screenshot(f"debug_clip_{clip.clip_index}")
                 
                 time.sleep(1)
             
