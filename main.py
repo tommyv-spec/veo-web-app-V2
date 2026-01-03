@@ -1242,10 +1242,15 @@ async def create_job(
     if request.last_frame_index is not None:
         print(f"[main.py] Last frame index: {request.last_frame_index}")
     
+    # For Flow jobs, use a special status that API worker will never pick up
+    initial_status = JobStatus.PENDING.value
+    if backend == BackendType.FLOW:
+        initial_status = "queued_for_flow"  # Special status only Flow worker handles
+    
     job = Job(
         id=job_id,
         user_id=current_user.id,  # Associate job with current user
-        status=JobStatus.PENDING.value,
+        status=initial_status,
         config_json=json.dumps(config_dict),
         dialogue_json=json.dumps({
             "lines": dialogue_list, 
