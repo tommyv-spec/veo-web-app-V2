@@ -299,21 +299,28 @@ class JobWorker:
             return
         
         with get_db() as db:
-            from sqlalchemy import func
+            # Get ALL pending jobs first, then filter in Python for reliability
+            all_pending = db.query(Job).filter(
+                Job.status == JobStatus.PENDING.value
+            ).order_by(Job.created_at.asc()).limit(20).all()
             
-            # Get pending jobs - EXPLICITLY exclude Flow backend
-            # Use COALESCE to treat NULL/empty as 'api', then exclude 'flow'
-            pending = db.query(Job).filter(
-                Job.status == JobStatus.PENDING.value,
-                # COALESCE(LOWER(backend), 'api') != 'flow'
-                func.coalesce(func.lower(Job.backend), 'api') != 'flow'
-            ).order_by(Job.created_at.asc()).limit(
-                self.max_workers - len(self.running_jobs)
-            ).all()
+            # Filter out Flow jobs in Python (more reliable than SQL functions)
+            pending = []
+            for job in all_pending:
+                backend = getattr(job, 'backend', None)
+                backend_str = str(backend).lower() if backend else 'api'
+                
+                if backend_str == 'flow':
+                    print(f"[Worker] SKIPPING Flow job {job.id[:8]} in pending check", flush=True)
+                    continue
+                
+                pending.append(job)
+                if len(pending) >= (self.max_workers - len(self.running_jobs)):
+                    break
             
             # Only log if there are jobs to process (reduces clutter)
             if pending:
-                print(f"[Worker] Found {len(pending)} API jobs to process", flush=True)
+                print(f"[Worker] Found {len(pending)} API jobs to process (filtered from {len(all_pending)} total)", flush=True)
                 for j in pending:
                     backend_val = getattr(j, 'backend', 'N/A')
                     print(f"[Worker] Processing job {j.id[:8]} (backend={backend_val})", flush=True)
@@ -800,16 +807,29 @@ class JobWorker:
                 # Check if this is a Flow backend job - skip it (Flow worker handles it)
                 backend_value = getattr(job, 'backend', None)
                 # Handle both string and enum values
-                backend_str = str(backend_value).lower() if backend_value else None
+                backend_str = str(backend_value).lower() if backend_value else ''
                 
-                print(f"[Worker] Job {job_id[:8]} backend check: raw={backend_value!r}, str={backend_str}", flush=True)
+                print(f"[Worker] Job {job_id[:8]} backend check:", flush=True)
+                print(f"[Worker]   raw value: {backend_value!r}", flush=True)
+                print(f"[Worker]   type: {type(backend_value)}", flush=True)
+                print(f"[Worker]   lower str: '{backend_str}'", flush=True)
                 
-                if backend_str == 'flow' or backend_value == 'flow':
-                    print(f"[Worker] SKIPPING Flow backend job {job_id[:8]} - Flow worker will handle", flush=True)
+                # More comprehensive Flow check
+                is_flow = (
+                    backend_str == 'flow' or 
+                    backend_value == 'flow' or
+                    str(backend_value) == 'BackendType.FLOW' or
+                    'flow' in backend_str
+                )
+                
+                if is_flow:
+                    print(f"[Worker] ❌ BLOCKED: Job {job_id[:8]} is Flow backend - NOT processing!", flush=True)
                     # Remove from running_jobs if we added it
                     if job_id in self.running_jobs:
                         del self.running_jobs[job_id]
                     return
+                
+                print(f"[Worker] ✓ Job {job_id[:8]} is API backend - proceeding", flush=True)
                 
                 # Check if already running (another thread got it)
                 if job.status != JobStatus.PENDING.value:
