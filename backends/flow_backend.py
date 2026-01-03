@@ -299,6 +299,16 @@ class FlowBackend:
             "--use-gl=swiftshader",
         ]
         
+        # Add SSL bypass flags if using proxy
+        if self.proxy_server:
+            stealth_args.extend([
+                "--ignore-certificate-errors",
+                "--ignore-ssl-errors",
+                "--ignore-certificate-errors-spki-list",
+                "--allow-insecure-localhost",
+            ])
+            print("[Flow] Added SSL bypass flags for proxy", flush=True)
+        
         # Build launch options
         launch_options = {
             "headless": self.headless,
@@ -338,6 +348,11 @@ class FlowBackend:
             },
             "permissions": ["geolocation"],
         }
+        
+        # Ignore HTTPS errors when using proxy (required for Bright Data and similar proxies)
+        if self.proxy_server:
+            context_options["ignore_https_errors"] = True
+            print("[Flow] SSL certificate validation disabled (proxy mode)", flush=True)
         
         if storage_state:
             context_options["storage_state"] = storage_state
