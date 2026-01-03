@@ -279,7 +279,15 @@ class FlowWorker:
                     self._complete_job(job_id, False, "Job not found")
                     return
                 
-                # Update job status
+                # Verify this is actually a Flow backend job
+                backend = getattr(job, 'backend', None)
+                backend_str = str(backend).lower() if backend else ''
+                if backend_str != 'flow':
+                    print(f"[FlowWorker] WARNING: Job {job_id} has backend '{backend}', not 'flow' - skipping", flush=True)
+                    self._complete_job(job_id, False, f"Job is not a Flow backend job (backend={backend})")
+                    return
+                
+                # Update job status to RUNNING
                 job.status = JobStatus.RUNNING.value
                 job.started_at = datetime.now(timezone.utc)
                 db.commit()
