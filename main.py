@@ -3684,6 +3684,288 @@ async def validate_gemini_key(request: ValidateKeyRequest):
         }
 
 
+# ============ Debug Screenshots ============
+
+@app.get("/api/debug/screenshots")
+async def list_debug_screenshots(
+    limit: int = 50,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    List debug screenshots stored in R2.
+    Returns list of screenshots with presigned URLs.
+    """
+    from backends.storage import is_storage_configured, get_storage
+    
+    if not is_storage_configured():
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    
+    try:
+        storage = get_storage()
+        
+        # List screenshots in debug folder
+        keys = storage.list_objects(prefix="debug/screenshots/", max_keys=limit)
+        
+        # Generate presigned URLs for each (valid for 1 hour)
+        screenshots = []
+        for key in reversed(keys):  # Newest first (by filename which has timestamp)
+            filename = key.split("/")[-1]
+            url = storage.get_presigned_url(key, expires_in=3600)
+            
+            # Parse timestamp from filename (format: YYYYMMDD_HHMMSS_name.png)
+            parts = filename.replace(".png", "").split("_")
+            if len(parts) >= 3:
+                date_str = parts[0]
+                time_str = parts[1]
+                name = "_".join(parts[2:])
+                try:
+                    timestamp = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]} {time_str[:2]}:{time_str[2:4]}:{time_str[4:]}"
+                except Exception:
+                    timestamp = "unknown"
+            else:
+                name = filename
+                timestamp = "unknown"
+            
+            screenshots.append({
+                "key": key,
+                "filename": filename,
+                "name": name,
+                "timestamp": timestamp,
+                "url": url
+            })
+        
+        return {
+            "count": len(screenshots),
+            "screenshots": screenshots
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list screenshots: {str(e)}")
+
+
+@app.get("/debug/screenshots", response_class=HTMLResponse)
+async def debug_screenshots_gallery(
+    request: Request,
+    limit: int = 100,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    HTML gallery page for viewing debug screenshots.
+    """
+    from backends.storage import is_storage_configured, get_storage
+    
+    if not is_storage_configured():
+        return HTMLResponse("<h1>Storage not configured</h1>")
+    
+    try:
+        storage = get_storage()
+        keys = storage.list_objects(prefix="debug/screenshots/", max_keys=limit)
+        
+        # Build screenshots list (newest first)
+        screenshots = []
+        for key in reversed(keys):
+            filename = key.split("/")[-1]
+            url = storage.get_presigned_url(key, expires_in=3600)
+            
+            parts = filename.replace(".png", "").split("_")
+            if len(parts) >= 3:
+                date_str = parts[0]
+                time_str = parts[1]
+                name = "_".join(parts[2:])
+                try:
+                    timestamp = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]} {time_str[:2]}:{time_str[2:4]}:{time_str[4:]}"
+                except Exception:
+                    timestamp = "unknown"
+            else:
+                name = filename
+                timestamp = "unknown"
+            
+            screenshots.append({
+                "name": name,
+                "timestamp": timestamp,
+                "url": url
+            })
+        
+        # Generate HTML
+        html = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Flow Debug Screenshots</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            color: #00d4ff;
+            margin-bottom: 20px;
+        }
+        .info {
+            color: #888;
+            margin-bottom: 20px;
+        }
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 20px;
+        }
+        .screenshot {
+            background: #16213e;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .screenshot img {
+            width: 100%;
+            height: auto;
+            display: block;
+            cursor: pointer;
+        }
+        .screenshot img:hover {
+            opacity: 0.9;
+        }
+        .screenshot .info-bar {
+            padding: 10px;
+            background: #0f3460;
+        }
+        .screenshot .name {
+            font-weight: bold;
+            color: #00d4ff;
+        }
+        .screenshot .timestamp {
+            font-size: 12px;
+            color: #888;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 1000;
+            cursor: pointer;
+        }
+        .modal img {
+            max-width: 95%;
+            max-height: 95%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #00d4ff;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <a href="/" class="back-link">← Back to Studio</a>
+    <h1>🔍 Flow Debug Screenshots</h1>
+    <p class="info">Showing """ + str(len(screenshots)) + """ screenshots (newest first). Click to enlarge.</p>
+    
+    <div class="gallery">
+"""
+        
+        for s in screenshots:
+            html += f"""
+        <div class="screenshot">
+            <img src="{s['url']}" alt="{s['name']}" onclick="showModal(this.src)">
+            <div class="info-bar">
+                <div class="name">{s['name']}</div>
+                <div class="timestamp">{s['timestamp']}</div>
+            </div>
+        </div>
+"""
+        
+        html += """
+    </div>
+    
+    <div class="modal" id="modal" onclick="hideModal()">
+        <img id="modal-img" src="">
+    </div>
+    
+    <script>
+        function showModal(src) {
+            document.getElementById('modal-img').src = src;
+            document.getElementById('modal').style.display = 'block';
+        }
+        function hideModal() {
+            document.getElementById('modal').style.display = 'none';
+        }
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') hideModal();
+        });
+    </script>
+</body>
+</html>
+"""
+        return HTMLResponse(html)
+        
+    except Exception as e:
+        return HTMLResponse(f"<h1>Error: {str(e)}</h1>")
+
+
+@app.delete("/api/debug/screenshots")
+async def delete_old_screenshots(
+    older_than_hours: int = 24,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete debug screenshots older than specified hours.
+    Helps clean up storage.
+    """
+    from backends.storage import is_storage_configured, get_storage
+    from datetime import datetime, timedelta
+    
+    if not is_storage_configured():
+        raise HTTPException(status_code=503, detail="Storage not configured")
+    
+    try:
+        storage = get_storage()
+        
+        # List all screenshots
+        keys = storage.list_objects(prefix="debug/screenshots/", max_keys=1000)
+        
+        cutoff = datetime.now() - timedelta(hours=older_than_hours)
+        deleted = 0
+        
+        for key in keys:
+            filename = key.split("/")[-1]
+            # Parse timestamp from filename
+            parts = filename.replace(".png", "").split("_")
+            if len(parts) >= 2:
+                try:
+                    date_str = parts[0]
+                    time_str = parts[1]
+                    file_time = datetime.strptime(f"{date_str}{time_str}", "%Y%m%d%H%M%S")
+                    
+                    if file_time < cutoff:
+                        storage.client.delete_object(Bucket=storage.bucket_name, Key=key)
+                        deleted += 1
+                except Exception:
+                    pass
+        
+        return {
+            "deleted": deleted,
+            "message": f"Deleted {deleted} screenshots older than {older_than_hours} hours"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete screenshots: {str(e)}")
+
+
 # ============ Main Entry Point ============
 
 if __name__ == "__main__":
