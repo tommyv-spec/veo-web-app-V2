@@ -380,6 +380,7 @@ class FlowWorker:
     def _prepare_frames(self, job, clips) -> str:
         """
         Download frames from object storage to local temp directory.
+        Also assigns frames to clips if not already assigned.
         
         Args:
             job: Job database object
@@ -404,6 +405,7 @@ class FlowWorker:
                     try:
                         storage.download_file(clip.start_frame, local_path)
                         clip.start_frame = local_path
+                        print(f"[FlowWorker] Downloaded start frame for clip {clip.clip_index}: {local_path}", flush=True)
                     except Exception as e:
                         print(f"[FlowWorker] Error downloading start frame: {e}", flush=True)
                 
@@ -413,18 +415,45 @@ class FlowWorker:
                     try:
                         storage.download_file(clip.end_frame, local_path)
                         clip.end_frame = local_path
+                        print(f"[FlowWorker] Downloaded end frame for clip {clip.clip_index}: {local_path}", flush=True)
                     except Exception as e:
                         print(f"[FlowWorker] Error downloading end frame: {e}", flush=True)
         
-        # Also check local job images directory
+        # Collect available images from job's images directory
+        available_images = []
         if job.images_dir and os.path.exists(job.images_dir):
-            # Copy images to temp dir if needed
             import shutil
-            for f in os.listdir(job.images_dir):
-                src = os.path.join(job.images_dir, f)
-                dst = os.path.join(frames_dir, f)
-                if os.path.isfile(src) and not os.path.exists(dst):
-                    shutil.copy2(src, dst)
+            # Get sorted list of image files
+            image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+            for f in sorted(os.listdir(job.images_dir)):
+                if os.path.splitext(f.lower())[1] in image_extensions:
+                    src = os.path.join(job.images_dir, f)
+                    dst = os.path.join(frames_dir, f)
+                    if os.path.isfile(src):
+                        if not os.path.exists(dst):
+                            shutil.copy2(src, dst)
+                        available_images.append(dst)
+            
+            print(f"[FlowWorker] Found {len(available_images)} images in job directory", flush=True)
+            for img in available_images:
+                print(f"[FlowWorker]   - {os.path.basename(img)}", flush=True)
+        
+        # Assign frames to clips if they don't have any
+        # For single-image mode: use first image as start_frame for all clips
+        # For storyboard mode: each clip gets its assigned image
+        if available_images:
+            for i, clip in enumerate(clips):
+                if not clip.start_frame:
+                    # Try to match image by index or use first available
+                    if i < len(available_images):
+                        clip.start_frame = available_images[i]
+                        print(f"[FlowWorker] Assigned image {i+1} to clip {clip.clip_index}: {os.path.basename(available_images[i])}", flush=True)
+                    elif available_images:
+                        # Fallback to first image for all clips (single image mode)
+                        clip.start_frame = available_images[0]
+                        print(f"[FlowWorker] Assigned first image to clip {clip.clip_index}: {os.path.basename(available_images[0])}", flush=True)
+        else:
+            print(f"[FlowWorker] WARNING: No images found for job!", flush=True)
         
         return frames_dir
     
