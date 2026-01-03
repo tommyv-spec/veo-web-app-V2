@@ -437,9 +437,23 @@ class ObjectStorage:
         Returns:
             Storage state dict or None if not found
         """
+        # First try the environment variable path
+        env_key = os.environ.get("FLOW_STORAGE_STATE_URL")
+        if env_key:
+            print(f"[Storage] Trying to download auth state from: {env_key}", flush=True)
+            if self.exists(env_key):
+                data = self.download_bytes(env_key)
+                print(f"[Storage] Successfully downloaded auth state from: {env_key}", flush=True)
+                return json.loads(data.decode('utf-8'))
+            else:
+                print(f"[Storage] Auth state not found at: {env_key}", flush=True)
+        
+        # Fall back to default path
         key = f"flow/auth/{account_name}/storage_state.json"
+        print(f"[Storage] Trying default path: {key}", flush=True)
         
         if not self.exists(key):
+            print(f"[Storage] Auth state not found at default path either", flush=True)
             return None
         
         data = self.download_bytes(key)
