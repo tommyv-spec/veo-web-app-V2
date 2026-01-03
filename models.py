@@ -157,11 +157,16 @@ class Job(Base):
     blacklist = relationship("BlacklistEntry", back_populates="job", cascade="all, delete-orphan")
     
     def to_dict(self) -> Dict[str, Any]:
+        # For UI display, translate internal statuses to user-friendly ones
+        display_status = self.status
+        if self.status == "queued_for_flow":
+            display_status = "pending"  # Show as pending in UI
+        
         return {
             "id": self.id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "status": self.status,
+            "status": display_status,
             "progress_percent": self.progress_percent,
             "total_clips": self.total_clips,
             "completed_clips": self.completed_clips,
