@@ -863,15 +863,64 @@ class FlowBackend:
                         frame_name="END frame"
                     )
                 
-                # Enter prompt
+                # Enter prompt with verification
+                print(f"[Flow] Entering prompt ({len(prompt)} chars)...", flush=True)
+                print(f"[Flow] Prompt preview: {prompt[:100]}...", flush=True)
+                
                 textarea = self._page.locator("#PINHOLE_TEXT_AREA_ELEMENT_ID")
+                
+                # Make sure textarea is visible and interactable
+                try:
+                    textarea.wait_for(state="visible", timeout=5000)
+                except Exception as e:
+                    print(f"[Flow] Textarea not immediately visible: {e}", flush=True)
+                    self._page.screenshot(path="/tmp/flow_no_textarea.png")
+                
+                # Click to focus
                 textarea.click()
                 time.sleep(0.5)
+                
+                # Clear any existing content
                 textarea.fill("")
                 time.sleep(0.3)
+                
+                # Enter the prompt using fill
                 textarea.fill(prompt)
-                print(f"[Flow] Entered prompt: {clip.dialogue_text[:50]}...", flush=True)
-                time.sleep(10)
+                print(f"[Flow] Filled prompt into textarea", flush=True)
+                time.sleep(1)
+                
+                # Trigger input event in case fill didn't
+                try:
+                    textarea.evaluate("el => el.dispatchEvent(new Event('input', { bubbles: true }))")
+                    textarea.evaluate("el => el.dispatchEvent(new Event('change', { bubbles: true }))")
+                except Exception:
+                    pass
+                
+                # Verify the prompt was entered
+                time.sleep(1)
+                entered_text = textarea.input_value()
+                if entered_text and len(entered_text) > 50:
+                    print(f"[Flow] ✓ Prompt verified ({len(entered_text)} chars in textarea)", flush=True)
+                else:
+                    print(f"[Flow] ⚠ Prompt may not have been entered. Trying press_sequentially...", flush=True)
+                    # Clear and try typing character by character (slower but more reliable)
+                    textarea.fill("")
+                    # Type just the first part to trigger the UI
+                    textarea.press_sequentially(prompt[:200], delay=10)
+                    time.sleep(0.5)
+                    # Then fill the rest
+                    textarea.fill(prompt)
+                    time.sleep(1)
+                
+                # Take screenshot showing prompt entered
+                try:
+                    self._page.screenshot(path="/tmp/flow_prompt_entered.png")
+                    print("[Flow] Screenshot saved: /tmp/flow_prompt_entered.png", flush=True)
+                except Exception:
+                    pass
+                
+                # Brief wait for UI to process
+                time.sleep(2)
                 
             else:
                 # Reuse frames, just change prompt
@@ -898,134 +947,188 @@ class FlowBackend:
                 clip.status = "generating"
                 return True
             
-            # Wait for Generate button and click it properly
-            print("[Flow] Looking for Generate button...", flush=True)
+            # === VERIFY PROMPT WAS ENTERED ===
+            print("[Flow] Verifying prompt was entered...", flush=True)
+            time.sleep(1)
             
-            # Take screenshot before trying to click Generate
+            try:
+                textarea = self._page.locator("#PINHOLE_TEXT_AREA_ELEMENT_ID")
+                current_text = textarea.input_value()
+                if current_text and len(current_text) > 10:
+                    print(f"[Flow] ✓ Prompt verified in textarea ({len(current_text)} chars)", flush=True)
+                else:
+                    print(f"[Flow] ⚠ Textarea seems empty or short: '{current_text[:50] if current_text else 'EMPTY'}'", flush=True)
+                    # Try entering prompt again
+                    textarea.click()
+                    time.sleep(0.5)
+                    textarea.fill(prompt)
+                    print("[Flow] Re-entered prompt", flush=True)
+                    time.sleep(2)
+            except Exception as e:
+                print(f"[Flow] Could not verify prompt: {e}", flush=True)
+            
+            # Take screenshot before Generate
             try:
                 self._page.screenshot(path="/tmp/flow_before_generate.png")
                 print("[Flow] Screenshot saved: /tmp/flow_before_generate.png", flush=True)
             except Exception:
                 pass
             
-            # Try multiple selectors for the Generate button
-            generate_btn = None
-            generate_selectors = [
-                "div.sc-408537d4-1.eiHkev > button",  # Original selector
-                "button:has-text('Generate')",
-                "[aria-label='Generate']",
-                "button[type='submit']",
-                "button.generate-button",
-                # Look for the arrow/send icon button at the bottom right
-                "button:has(svg)",
-                "button:near(:text('Expand'))",
-            ]
+            # === CLICK GENERATE BUTTON ===
+            # The Generate button is the arrow icon (→) at the bottom right of the prompt area
+            # It uses Material Icons with text 'arrow_forward'
+            print("[Flow] Looking for Generate button (arrow icon)...", flush=True)
             
-            for selector in generate_selectors:
-                try:
-                    btn = self._page.locator(selector).first
-                    if btn.count() > 0 and btn.is_visible():
-                        # Check if it's not disabled
-                        if not btn.is_disabled():
-                            generate_btn = btn
-                            print(f"[Flow] Found Generate button with selector: {selector}", flush=True)
-                            break
-                        else:
-                            print(f"[Flow] Button found but disabled: {selector}", flush=True)
-                except Exception as e:
-                    pass
+            generate_clicked = False
             
-            if not generate_btn:
-                # Try finding by the arrow icon (common in chat-like interfaces)
-                try:
-                    # The generate button might be the arrow at bottom right of the prompt box
-                    arrow_btn = self._page.locator("button").filter(has=self._page.locator("svg")).last
-                    if arrow_btn.count() > 0 and arrow_btn.is_visible():
-                        generate_btn = arrow_btn
-                        print("[Flow] Found Generate button by arrow icon", flush=True)
-                except Exception:
-                    pass
-            
-            if not generate_btn:
-                print("[Flow] ERROR: Could not find Generate button!", flush=True)
-                self._page.screenshot(path="/tmp/flow_no_generate_btn.png")
-                raise RuntimeError("Generate button not found")
-            
-            # Wait for button to be enabled
-            print("[Flow] Waiting for Generate button to be enabled...", flush=True)
-            for attempt in range(30):
-                try:
-                    if not generate_btn.is_disabled():
-                        print("[Flow] Generate button is enabled!", flush=True)
-                        break
-                except Exception:
-                    pass
-                time.sleep(0.5)
-            
-            # Click the button (not keyboard Enter!)
-            print("[Flow] Clicking Generate button...", flush=True)
-            time.sleep(1)
-            
+            # Method 1: Click the arrow_forward icon directly (same as reuse mode)
             try:
-                generate_btn.click(force=True)
-                print("[Flow] Clicked Generate button", flush=True)
+                arrow_icon = self._page.locator("i:text('arrow_forward')").first
+                if arrow_icon.count() > 0 and arrow_icon.is_visible():
+                    print("[Flow] Found arrow_forward icon, clicking...", flush=True)
+                    arrow_icon.click(force=True)
+                    generate_clicked = True
+                    print("[Flow] ✓ Clicked arrow_forward icon", flush=True)
             except Exception as e:
-                print(f"[Flow] Direct click failed: {e}, trying JavaScript click...", flush=True)
+                print(f"[Flow] arrow_forward icon click failed: {e}", flush=True)
+            
+            # Method 2: Try clicking the parent button of the arrow icon
+            if not generate_clicked:
                 try:
-                    generate_btn.evaluate("el => el.click()")
-                    print("[Flow] JavaScript click succeeded", flush=True)
-                except Exception as e2:
-                    print(f"[Flow] JavaScript click also failed: {e2}", flush=True)
-                    # Last resort: keyboard
-                    generate_btn.focus()
+                    # Find button containing the arrow icon
+                    arrow_btn = self._page.locator("button:has(i:text('arrow_forward'))").first
+                    if arrow_btn.count() > 0:
+                        print("[Flow] Found button with arrow icon, clicking...", flush=True)
+                        arrow_btn.click(force=True)
+                        generate_clicked = True
+                        print("[Flow] ✓ Clicked button with arrow icon", flush=True)
+                except Exception as e:
+                    print(f"[Flow] Button with arrow icon failed: {e}", flush=True)
+            
+            # Method 3: Try the original CSS selector
+            if not generate_clicked:
+                try:
+                    btn = self._page.locator("div.sc-408537d4-1.eiHkev > button").first
+                    if btn.count() > 0 and btn.is_visible():
+                        print("[Flow] Trying CSS class selector...", flush=True)
+                        btn.click(force=True)
+                        generate_clicked = True
+                        print("[Flow] ✓ Clicked via CSS selector", flush=True)
+                except Exception as e:
+                    print(f"[Flow] CSS selector failed: {e}", flush=True)
+            
+            # Method 4: Find any button near "Expand" text
+            if not generate_clicked:
+                try:
+                    # The generate button is right of "Expand"
+                    expand_area = self._page.locator("text=Expand")
+                    if expand_area.count() > 0:
+                        # Get the parent container and find buttons in it
+                        all_buttons = self._page.locator("button")
+                        for i in range(all_buttons.count()):
+                            btn = all_buttons.nth(i)
+                            try:
+                                # Look for a circular button (likely the submit button)
+                                if btn.is_visible():
+                                    inner_html = btn.inner_html()
+                                    if 'arrow' in inner_html.lower() or 'svg' in inner_html.lower():
+                                        print(f"[Flow] Found button {i} with arrow/svg, clicking...", flush=True)
+                                        btn.click(force=True)
+                                        generate_clicked = True
+                                        print(f"[Flow] ✓ Clicked button {i}", flush=True)
+                                        break
+                            except Exception:
+                                pass
+                except Exception as e:
+                    print(f"[Flow] Expand-area search failed: {e}", flush=True)
+            
+            # Method 5: Use keyboard shortcut (Ctrl+Enter or Enter on focused button)
+            if not generate_clicked:
+                try:
+                    print("[Flow] Trying keyboard shortcut...", flush=True)
+                    # Focus on the textarea and try Ctrl+Enter
+                    textarea = self._page.locator("#PINHOLE_TEXT_AREA_ELEMENT_ID")
+                    textarea.focus()
+                    time.sleep(0.3)
+                    self._page.keyboard.press("Control+Enter")
+                    time.sleep(1)
+                    # Or try Tab then Enter to focus the button
+                    self._page.keyboard.press("Tab")
+                    time.sleep(0.3)
                     self._page.keyboard.press("Enter")
-                    print("[Flow] Used keyboard Enter as fallback", flush=True)
+                    generate_clicked = True
+                    print("[Flow] ✓ Used keyboard shortcut", flush=True)
+                except Exception as e:
+                    print(f"[Flow] Keyboard shortcut failed: {e}", flush=True)
             
-            # Wait and verify something is happening
-            time.sleep(3)
+            if not generate_clicked:
+                print("[Flow] ERROR: All Generate button methods failed!", flush=True)
+                self._page.screenshot(path="/tmp/flow_generate_failed.png")
+                raise RuntimeError("Could not click Generate button")
             
-            # Take screenshot after clicking to verify
+            # Wait for generation to start
+            print("[Flow] Waiting for generation to start...", flush=True)
+            time.sleep(5)
+            
+            # Take screenshot after clicking
             try:
                 self._page.screenshot(path="/tmp/flow_after_generate.png")
                 print("[Flow] Screenshot saved: /tmp/flow_after_generate.png", flush=True)
             except Exception:
                 pass
             
+            # Check for error messages
+            error_messages = [
+                "text=Error",
+                "text=Failed",
+                "text=limit",
+                "text=quota",
+                ".error",
+                "[role='alert']",
+            ]
+            
+            for error_sel in error_messages:
+                try:
+                    error_el = self._page.locator(error_sel).first
+                    if error_el.count() > 0 and error_el.is_visible():
+                        error_text = error_el.text_content()
+                        print(f"[Flow] ⚠ Found error message: {error_text}", flush=True)
+                except Exception:
+                    pass
+            
             # Look for signs that generation started
             generation_started = False
             
-            # Check for loading indicators or status changes
-            loading_indicators = [
+            # Check for generation indicators
+            generation_indicators = [
                 "text=Generating",
-                "text=Loading",
-                "text=Processing",
-                ".loading",
-                ".spinner",
-                "[role='progressbar']",
                 "text=Queued",
+                "text=Processing",
+                "text=in progress",
+                ".generating",
+                "[data-generating='true']",
             ]
             
-            for indicator in loading_indicators:
+            for indicator in generation_indicators:
                 try:
                     if self._page.locator(indicator).count() > 0:
-                        print(f"[Flow] Found generation indicator: {indicator}", flush=True)
+                        print(f"[Flow] ✓ Found generation indicator: {indicator}", flush=True)
                         generation_started = True
                         break
                 except Exception:
                     pass
             
-            # Also check if a video element or clip container appeared
+            # Check if video elements appeared
             try:
                 video_count = self._page.locator("video").count()
-                clip_containers = self._page.locator("[data-index]").count()
-                if video_count > 0 or clip_containers > 0:
-                    print(f"[Flow] Found {video_count} videos, {clip_containers} clip containers", flush=True)
+                if video_count > 0:
+                    print(f"[Flow] ✓ Found {video_count} video element(s)", flush=True)
                     generation_started = True
             except Exception:
                 pass
             
             if not generation_started:
-                print("[Flow] WARNING: Could not verify generation started - continuing anyway", flush=True)
+                print("[Flow] ⚠ Could not verify generation started - check screenshots", flush=True)
             
             print(f"[Flow] Clip {clip.clip_index + 1}: Generation started", flush=True)
             time.sleep(5)
