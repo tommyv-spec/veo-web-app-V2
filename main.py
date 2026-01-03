@@ -3220,7 +3220,7 @@ async def get_job_image(
     current_user: User = Depends(get_current_user),
 ):
     """Get an image from a job's images directory (local or R2)"""
-    from fastapi.responses import RedirectResponse
+    from fastapi.responses import Response
     
     job = get_user_job(db, job_id, current_user)
     
@@ -3235,7 +3235,7 @@ async def get_job_image(
         if filepath.exists():
             return FileResponse(filepath, media_type=media_type)
     
-    # Method 2: Check R2 storage - redirect to presigned URL
+    # Method 2: Download from R2 and serve (avoid CORS issues with redirect)
     try:
         from backends.storage import is_storage_configured, get_storage
         
@@ -3245,9 +3245,22 @@ async def get_job_image(
             
             # Check if file exists in R2
             if storage.exists(r2_key):
-                # Generate presigned URL and redirect
-                presigned_url = storage.get_presigned_url(r2_key, expires_in=3600)
-                return RedirectResponse(url=presigned_url, status_code=302)
+                # Download bytes and serve directly (avoids CORS redirect issues)
+                import tempfile
+                temp_path = tempfile.mktemp(suffix=suffix)
+                storage.download_file(r2_key, temp_path)
+                
+                # Read and return
+                with open(temp_path, 'rb') as f:
+                    content = f.read()
+                
+                # Clean up temp file
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
+                
+                return Response(content=content, media_type=media_type)
     except Exception as e:
         print(f"[Images] Error fetching from R2: {e}", flush=True)
     
