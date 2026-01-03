@@ -57,13 +57,6 @@ def has_valid_api_keys(
         if user_keys and len(user_keys) > 0:
             return True
     
-    # Check 3: Environment-configured keys (admin/global fallback)
-    from config import api_keys_config
-    if api_keys_config and api_keys_config.gemini_api_keys:
-        valid_env_keys = [k for k in api_keys_config.gemini_api_keys 
-                         if k and k.strip() and not k.startswith("your-")]
-        if valid_env_keys:
-            return True
     
     return False
 
