@@ -103,8 +103,11 @@ def clean_prompt_for_flow(prompt: str, dialogue: str, language: str = "English")
     if not prompt:
         return get_prompt(dialogue, language)
     
-    # If prompt doesn't have our markers, return as-is
-    if "===" not in prompt and "---" not in prompt:
+    # If prompt doesn't have our markers or voice profile hints, return as-is
+    has_markers = "===" in prompt or "---" in prompt
+    has_voice_hints = any(x in prompt.lower() for x in ['pacing:', 'accent:', 'gender:', 'pitch:'])
+    
+    if not has_markers and not has_voice_hints:
         return prompt
     
     # Extract the useful part - everything after the voice profile section
@@ -119,6 +122,12 @@ def clean_prompt_for_flow(prompt: str, dialogue: str, language: str = "English")
     clean_lines = []
     skip_until_content = False
     found_content = False
+    
+    # Lines to skip (voice/style metadata that shouldn't be in Flow prompt)
+    skip_patterns = [
+        'gender:', 'pitch:', 'timbre:', 'texture:', 'tone:', 'age:',
+        'pacing:', 'accent:', 'speaking style:', 'delivery:'
+    ]
     
     for line in lines:
         stripped = line.strip()
@@ -135,7 +144,7 @@ def clean_prompt_for_flow(prompt: str, dialogue: str, language: str = "English")
         # Once we hit real content, start collecting
         if stripped and not stripped.startswith('===') and not stripped.startswith('---'):
             # Skip lines that look like voice profile data
-            if any(x in stripped.lower() for x in ['gender:', 'pitch:', 'timbre:', 'texture:', 'tone:', 'age:']):
+            if any(x in stripped.lower() for x in skip_patterns):
                 continue
             
             found_content = True
@@ -317,12 +326,17 @@ class FlowBackend:
         
         # Add proxy if configured
         if self.proxy_server:
-            proxy_config = {"server": self.proxy_server}
+            # Try embedding credentials in URL (some proxies require this format)
             if self.proxy_username and self.proxy_password:
-                proxy_config["username"] = self.proxy_username
-                proxy_config["password"] = self.proxy_password
+                # Format: http://user:pass@host:port
+                server_parts = self.proxy_server.replace("http://", "").replace("https://", "")
+                proxy_url = f"http://{self.proxy_username}:{self.proxy_password}@{server_parts}"
+                proxy_config = {"server": proxy_url}
+                print(f"[Flow] Proxy configured with embedded auth: {server_parts}", flush=True)
+            else:
+                proxy_config = {"server": self.proxy_server}
+                print(f"[Flow] Proxy configured (no auth): {self.proxy_server}", flush=True)
             launch_options["proxy"] = proxy_config
-            print(f"[Flow] Proxy configured: {self.proxy_server}", flush=True)
         
         self._browser = self._playwright.chromium.launch(**launch_options)
         
@@ -432,6 +446,31 @@ class FlowBackend:
         """)
         
         print("[Flow] Browser started with stealth mode", flush=True)
+        
+        # Test proxy connection if configured
+        if self.proxy_server:
+            self._test_proxy_connection()
+    
+    def _test_proxy_connection(self):
+        """Test if the proxy is working by loading a simple page"""
+        print("[Flow] Testing proxy connection...", flush=True)
+        try:
+            # Try to load a simple, fast page to test proxy
+            self._page.goto("https://httpbin.org/ip", timeout=30000, wait_until="load")
+            
+            # Get the response to see what IP we're using
+            content = self._page.content()
+            print(f"[Flow] Proxy test response: {content[:200]}", flush=True)
+            
+            # Check if we got a valid response
+            if "origin" in content:
+                print("[Flow] ✓ Proxy connection working!", flush=True)
+            else:
+                print("[Flow] ⚠ Proxy test: unexpected response", flush=True)
+                
+        except Exception as e:
+            print(f"[Flow] ✗ Proxy test failed: {e}", flush=True)
+            print("[Flow] Will try to continue anyway...", flush=True)
     
     def _human_delay(self, min_ms: int = 500, max_ms: int = 1500):
         """Add a random human-like delay"""
@@ -681,6 +720,158 @@ class FlowBackend:
         print("[Flow] Login timeout", flush=True)
         return False
     
+    def _monitor_generation(self, job: 'FlowJob', total_wait_seconds: int = 120):
+        """
+        Monitor generation progress with periodic screenshots and error checking.
+        
+        Args:
+            job: The job being processed
+            total_wait_seconds: Total time to wait for generation
+        """
+        screenshot_interval = 30  # Take screenshot every 30 seconds
+        check_interval = 10  # Check for errors every 10 seconds
+        elapsed = 0
+        screenshot_count = 0
+        
+        print(f"[Flow] 🔍 Starting generation monitoring (total wait: {total_wait_seconds}s)", flush=True)
+        
+        while elapsed < total_wait_seconds:
+            time.sleep(check_interval)
+            elapsed += check_interval
+            
+            # Check for and dismiss any popups
+            self._check_and_dismiss_popup()
+            
+            # Check for error messages
+            error_found = self._check_for_generation_errors()
+            if error_found:
+                print(f"[Flow] ⚠️ Error detected at {elapsed}s - taking screenshot", flush=True)
+                self._screenshot(f"generation_error_{elapsed}s")
+            
+            # Check generation progress
+            progress_info = self._check_generation_progress()
+            if progress_info:
+                print(f"[Flow] 📊 Progress at {elapsed}s: {progress_info}", flush=True)
+            
+            # Take periodic screenshots
+            if elapsed % screenshot_interval == 0:
+                screenshot_count += 1
+                print(f"[Flow] 📸 Taking periodic screenshot #{screenshot_count} at {elapsed}s", flush=True)
+                self._screenshot(f"generation_progress_{elapsed}s")
+            
+            # Log status
+            if elapsed % 30 == 0:
+                print(f"[Flow] ⏳ Waiting... {elapsed}/{total_wait_seconds}s elapsed", flush=True)
+        
+        # Final screenshot
+        print(f"[Flow] 📸 Taking final screenshot after {total_wait_seconds}s wait", flush=True)
+        self._screenshot("generation_complete")
+        
+        print(f"[Flow] ✅ Generation monitoring complete", flush=True)
+    
+    def _check_for_generation_errors(self) -> bool:
+        """
+        Check for error messages or popups during generation.
+        
+        Returns:
+            True if an error was found
+        """
+        error_selectors = [
+            "text=Error",
+            "text=Failed",
+            "text=Something went wrong",
+            "text=limit reached",
+            "text=quota exceeded",
+            "text=try again",
+            "text=couldn't generate",
+            "text=generation failed",
+            "[role='alert']",
+            ".error-message",
+            ".error",
+        ]
+        
+        for selector in error_selectors:
+            try:
+                error_el = self._page.locator(selector).first
+                if error_el.count() > 0 and error_el.is_visible():
+                    try:
+                        error_text = error_el.text_content()[:100]
+                        print(f"[Flow] ❌ Error found: {error_text}", flush=True)
+                    except Exception:
+                        print(f"[Flow] ❌ Error element found with selector: {selector}", flush=True)
+                    return True
+            except Exception:
+                pass
+        
+        # Also check for unexpected dialogs/modals
+        modal_selectors = [
+            "[role='dialog']",
+            "[role='alertdialog']",
+            ".modal",
+            "[aria-modal='true']",
+        ]
+        
+        for selector in modal_selectors:
+            try:
+                modal = self._page.locator(selector).first
+                if modal.count() > 0 and modal.is_visible():
+                    try:
+                        modal_text = modal.text_content()[:200]
+                        # Only flag if it looks like an error
+                        if any(word in modal_text.lower() for word in ['error', 'fail', 'wrong', 'sorry', 'limit']):
+                            print(f"[Flow] ⚠️ Error modal found: {modal_text[:100]}...", flush=True)
+                            return True
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        
+        return False
+    
+    def _check_generation_progress(self) -> Optional[str]:
+        """
+        Check the current generation progress.
+        
+        Returns:
+            Progress info string, or None if no progress indicators found
+        """
+        progress_info = []
+        
+        # Check for video elements (completed generations)
+        try:
+            video_count = self._page.locator("video").count()
+            if video_count > 0:
+                progress_info.append(f"{video_count} video(s)")
+        except Exception:
+            pass
+        
+        # Check for progress percentage
+        try:
+            # Look for percentage text (e.g., "45%", "Generating 67%")
+            page_text = self._page.locator("body").text_content()
+            import re
+            percentages = re.findall(r'(\d{1,3})%', page_text)
+            if percentages:
+                # Get unique percentages
+                unique_pcts = list(set(percentages))
+                if unique_pcts and unique_pcts != ['100']:
+                    progress_info.append(f"progress: {', '.join(unique_pcts)}%")
+        except Exception:
+            pass
+        
+        # Check for "Generating" or "Queued" indicators
+        try:
+            generating = self._page.locator("text=Generating").count()
+            queued = self._page.locator("text=Queued").count()
+            if generating > 0:
+                progress_info.append(f"{generating} generating")
+            if queued > 0:
+                progress_info.append(f"{queued} queued")
+        except Exception:
+            pass
+        
+        return ", ".join(progress_info) if progress_info else None
+    
     def export_auth_state(self, output_path: str = None, upload_to_s3: bool = False) -> Optional[str]:
         """
         Export current browser authentication state.
@@ -737,11 +928,22 @@ class FlowBackend:
         print("[Flow] Creating new project...", flush=True)
         
         # Navigate with longer timeout for proxy - use 'load' instead of 'networkidle'
-        self._page.goto(FLOW_HOME_URL, timeout=60000, wait_until="load")
+        # Increase timeout to 90 seconds for slow proxy connections
+        try:
+            print("[Flow] Navigating to Flow homepage...", flush=True)
+            self._page.goto(FLOW_HOME_URL, timeout=90000, wait_until="load")
+            print("[Flow] ✓ Page loaded successfully", flush=True)
+        except Exception as e:
+            print(f"[Flow] ✗ Navigation failed: {e}", flush=True)
+            self._screenshot("navigation_failed")
+            raise
         
         # Give the page time to initialize JavaScript
-        print("[Flow] Page loaded, waiting for JS initialization...", flush=True)
+        print("[Flow] Waiting for JS initialization...", flush=True)
         time.sleep(5)
+        
+        # Take screenshot to see what loaded
+        self._screenshot("after_navigation")
         
         # Check for login
         if self._check_login_required():
@@ -1721,8 +1923,10 @@ class FlowBackend:
             
             # Optionally wait and download
             if wait_for_generation:
-                print(f"[Flow] Waiting {DEFAULT_WAIT_AFTER_SUBMIT}s for generation...", flush=True)
-                time.sleep(DEFAULT_WAIT_AFTER_SUBMIT)
+                print(f"[Flow] Monitoring generation for {DEFAULT_WAIT_AFTER_SUBMIT}s...", flush=True)
+                
+                # Monitor generation with periodic screenshots and error checks
+                self._monitor_generation(job, DEFAULT_WAIT_AFTER_SUBMIT)
                 
                 # Build line mapping for download matching
                 line_mapping = {}
