@@ -85,6 +85,95 @@ def get_prompt(dialogue: str, language: str = "English") -> str:
     return f"""Medium shot, static locked-off camera, sharp focus on subject. The subject in the frame speaks directly to camera with steady gaze with slight smile, upright posture, shoulders back. The character says in {language}, "{dialogue}" Voice: smooth - slight crispness on emphasis. clear and authoritative, confident emotion. Ambient noise: Complete silence, professional recording booth, no room ambiance. Style: Raw realistic footage, natural lighting, photorealistic. Speech timing: 0s to 7.0s, then silence. No subtitles, no text overlays, no captions, no watermarks. No background music, no laughter, no applause, no crowd sounds, no ambient noise. No morphing, no face distortion, no jerky movements. Only the speaker's isolated voice. (no subtitles)"""
 
 
+def clean_prompt_for_flow(prompt: str, dialogue: str, language: str = "English") -> str:
+    """
+    Clean an API-generated prompt for use with Flow UI.
+    
+    The API prompt includes markers like === VOICE PROFILE === that confuse Flow.
+    This function extracts the essential content and creates a Flow-compatible prompt.
+    
+    Args:
+        prompt: The API-generated prompt (may have markers)
+        dialogue: The dialogue text (fallback if prompt is too broken)
+        language: Language for the dialogue
+        
+    Returns:
+        Clean prompt suitable for Flow
+    """
+    if not prompt:
+        return get_prompt(dialogue, language)
+    
+    # If prompt doesn't have our markers, return as-is
+    if "===" not in prompt and "---" not in prompt:
+        return prompt
+    
+    # Extract the useful part - everything after the voice profile section
+    # The format is:
+    # === VOICE PROFILE ===
+    # ...voice profile data...
+    # ===
+    # 
+    # Medium shot, static locked-off camera...
+    
+    lines = prompt.split('\n')
+    clean_lines = []
+    skip_until_content = False
+    found_content = False
+    
+    for line in lines:
+        stripped = line.strip()
+        
+        # Skip voice profile markers and content
+        if stripped.startswith('===') or stripped.startswith('---'):
+            skip_until_content = True
+            continue
+        
+        # Skip empty lines at the start
+        if not found_content and not stripped:
+            continue
+            
+        # Once we hit real content, start collecting
+        if stripped and not stripped.startswith('===') and not stripped.startswith('---'):
+            # Skip lines that look like voice profile data
+            if any(x in stripped.lower() for x in ['gender:', 'pitch:', 'timbre:', 'texture:', 'tone:', 'age:']):
+                continue
+            
+            found_content = True
+            clean_lines.append(line)
+    
+    if clean_lines:
+        clean_prompt = '\n'.join(clean_lines).strip()
+        # Make sure we have something useful
+        if len(clean_prompt) > 50:
+            return clean_prompt
+    
+    # Fallback: extract just the essential elements
+    # Try to find the dialogue line and build a simple prompt
+    import re
+    
+    # Try to extract the dialogue from the prompt
+    dialogue_match = re.search(r'says?\s+in\s+\w+,\s*"([^"]+)"', prompt)
+    if dialogue_match:
+        extracted_dialogue = dialogue_match.group(1)
+    else:
+        extracted_dialogue = dialogue
+    
+    # Build a clean, simple prompt
+    return f"""Medium shot, static locked-off camera, sharp focus on subject.
+
+The subject in the frame speaks directly to camera with natural expression, relaxed posture.
+
+The character says in {language}, "{extracted_dialogue}"
+
+Voice: natural voice, clear and authentic.
+
+Style: Raw realistic footage, natural lighting, photorealistic.
+
+No subtitles, no text overlays. No background music. Only the speaker's voice.
+
+(no subtitles)"""
+
+
 def get_video_id(src: str) -> Optional[str]:
     """Extract video ID from video source URL"""
     if not src:
@@ -748,8 +837,10 @@ class FlowBackend:
         
         # Use pre-built prompt from API engine if available, otherwise use simple fallback
         if clip.prompt:
-            prompt = clip.prompt
-            print(f"[Flow] Using API-generated prompt ({len(prompt)} chars)", flush=True)
+            # Clean the API prompt for Flow (remove === markers and voice profile formatting)
+            prompt = clean_prompt_for_flow(clip.prompt, clip.dialogue_text, language)
+            print(f"[Flow] Cleaned API prompt for Flow ({len(prompt)} chars)", flush=True)
+            print(f"[Flow] Prompt preview: {prompt[:150]}...", flush=True)
         else:
             prompt = get_prompt(clip.dialogue_text, language)
             print(f"[Flow] Using fallback prompt ({len(prompt)} chars)", flush=True)
