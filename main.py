@@ -1265,16 +1265,67 @@ async def create_job(
     
     add_job_log(db, job_id, f"Job created (backend: {backend.value})", "INFO", "system")
     
-    # If Flow backend, enqueue to Redis
+    # If Flow backend, upload images to R2 and enqueue to Redis
     if backend == BackendType.FLOW:
         try:
+            # Upload images to R2 so Flow worker can access them
+            from backends.storage import is_storage_configured, get_storage
+            
+            if is_storage_configured():
+                storage = get_storage()
+                uploaded_frames = []
+                
+                # Get all images from the job's images directory
+                if images_dir.exists():
+                    image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+                    for img_file in sorted(images_dir.iterdir()):
+                        if img_file.suffix.lower() in image_extensions:
+                            try:
+                                # Upload to R2
+                                remote_key = storage.upload_job_frame(
+                                    job_id, 
+                                    img_file.name, 
+                                    img_file
+                                )
+                                uploaded_frames.append(remote_key)
+                                print(f"[main.py] Uploaded frame to R2: {remote_key}")
+                            except Exception as e:
+                                print(f"[main.py] Failed to upload frame {img_file.name}: {e}")
+                
+                if uploaded_frames:
+                    add_job_log(db, job_id, f"Uploaded {len(uploaded_frames)} frames to storage", "INFO", "flow")
+                    
+                    # Create clips with frame references
+                    for i, line in enumerate(dialogue_list):
+                        frame_key = uploaded_frames[min(i, len(uploaded_frames) - 1)] if uploaded_frames else None
+                        clip = Clip(
+                            job_id=job_id,
+                            clip_index=i,
+                            dialogue_id=line.get("id", i + 1),
+                            dialogue_text=line.get("text", ""),
+                            status=ClipStatus.PENDING.value,
+                            start_frame=frame_key,  # Store R2 key
+                            end_frame=None,
+                        )
+                        db.add(clip)
+                    db.commit()
+                    print(f"[main.py] Created {len(dialogue_list)} clips with frame references")
+                else:
+                    print(f"[main.py] WARNING: No frames uploaded to R2 for Flow job")
+            else:
+                print(f"[main.py] WARNING: Storage not configured - Flow job may fail to access images")
+                add_job_log(db, job_id, "WARNING: Object storage not configured", "WARNING", "flow")
+            
+            # Enqueue job
             from flow_worker import enqueue_flow_job
             enqueue_flow_job(job_id)
             add_job_log(db, job_id, "Job queued for Flow processing", "INFO", "flow")
             print(f"[main.py] Job {job_id} queued for Flow backend")
         except Exception as e:
-            print(f"[main.py] Failed to enqueue Flow job: {e}")
-            add_job_log(db, job_id, f"Failed to enqueue Flow job: {e}", "ERROR", "flow")
+            print(f"[main.py] Failed to setup Flow job: {e}")
+            import traceback
+            traceback.print_exc()
+            add_job_log(db, job_id, f"Failed to setup Flow job: {e}", "ERROR", "flow")
     
     return JobResponse(
         id=job.id,
