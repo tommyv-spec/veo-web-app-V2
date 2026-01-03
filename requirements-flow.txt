@@ -2,7 +2,7 @@
 # These are in addition to the main requirements.txt
 
 # Browser automation
-playwright>=1.48.0
+playwright==1.57.0
 
 # Redis/Valkey queue
 redis>=5.0.0
