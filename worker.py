@@ -1020,6 +1020,8 @@ class JobWorker:
         With the NEW dynamic key pool, we just check if any keys are available
         (not rate-limited). No need to check for "free" vs "reserved" keys since
         all keys are shared dynamically.
+        
+        NOTE: Only resumes API backend jobs. Flow jobs are handled by Flow worker.
         """
         try:
             from config import key_pool, api_keys_config
@@ -1035,15 +1037,17 @@ class JobWorker:
                 return
             
             with get_db() as db:
-                # Find paused jobs (waiting for keys)
+                # Find paused jobs (waiting for keys) - ONLY API backend jobs
+                from sqlalchemy import or_
                 paused_jobs = db.query(Job).filter(
-                    Job.status == JobStatus.PAUSED.value
+                    Job.status == JobStatus.PAUSED.value,
+                    or_(Job.backend == "api", Job.backend == None)  # Only API jobs
                 ).order_by(Job.created_at.asc()).all()  # FIFO order
                 
                 if not paused_jobs:
                     return
                 
-                print(f"[Worker] Found {len(paused_jobs)} paused job(s), {available_count} keys available", flush=True)
+                print(f"[Worker] Found {len(paused_jobs)} paused API job(s), {available_count} keys available", flush=True)
                 
                 for job in paused_jobs:
                     # With dynamic keys, just resume if ANY keys are available
