@@ -1553,8 +1553,10 @@ async def get_job_config(
         dialogue_lines = dialogue_raw.get("lines", [])
         scenes = dialogue_raw.get("scenes", None)
     
-    # Get list of images
+    # Get list of images - check local filesystem first, then R2
     images = []
+    
+    # Method 1: Check local filesystem (legacy)
     if job.images_dir:
         images_path = Path(job.images_dir)
         if images_path.exists():
@@ -1565,6 +1567,30 @@ async def get_job_config(
                         "filename": img_file.name,
                         "url": f"/api/jobs/{job_id}/images/{img_file.name}"
                     })
+    
+    # Method 2: Check R2 storage if no local images found
+    if not images:
+        try:
+            from backends.storage import is_storage_configured, get_storage
+            
+            if is_storage_configured():
+                storage = get_storage()
+                # List images in job's R2 folder
+                r2_prefix = f"jobs/{job_id}/frames/"
+                r2_keys = storage.list_objects(prefix=r2_prefix, max_keys=100)
+                
+                for key in sorted(r2_keys):
+                    filename = key.split("/")[-1]
+                    if filename and any(filename.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp"]):
+                        images.append({
+                            "filename": filename,
+                            "url": f"/api/jobs/{job_id}/images/{filename}"
+                        })
+                
+                if images:
+                    print(f"[Config] Found {len(images)} images in R2 for job {job_id}", flush=True)
+        except Exception as e:
+            print(f"[Config] Error checking R2 for images: {e}", flush=True)
     
     return {
         "job_id": job_id,
@@ -3193,23 +3219,39 @@ async def get_job_image(
     db: DBSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    """Get an image from a job's images directory"""
+    """Get an image from a job's images directory (local or R2)"""
+    from fastapi.responses import RedirectResponse
+    
     job = get_user_job(db, job_id, current_user)
     
-    if not job.images_dir:
-        raise HTTPException(status_code=404, detail="No images directory")
-    
-    filepath = Path(job.images_dir) / filename
-    
-    if not filepath.exists():
-        raise HTTPException(status_code=404, detail="Image not found")
-    
     # Determine media type
-    suffix = filepath.suffix.lower()
+    suffix = Path(filename).suffix.lower()
     media_types = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp'}
     media_type = media_types.get(suffix, 'image/png')
     
-    return FileResponse(filepath, media_type=media_type)
+    # Method 1: Check local filesystem first
+    if job.images_dir:
+        filepath = Path(job.images_dir) / filename
+        if filepath.exists():
+            return FileResponse(filepath, media_type=media_type)
+    
+    # Method 2: Check R2 storage - redirect to presigned URL
+    try:
+        from backends.storage import is_storage_configured, get_storage
+        
+        if is_storage_configured():
+            storage = get_storage()
+            r2_key = f"jobs/{job_id}/frames/{filename}"
+            
+            # Check if file exists in R2
+            if storage.exists(r2_key):
+                # Generate presigned URL and redirect
+                presigned_url = storage.get_presigned_url(r2_key, expires_in=3600)
+                return RedirectResponse(url=presigned_url, status_code=302)
+    except Exception as e:
+        print(f"[Images] Error fetching from R2: {e}", flush=True)
+    
+    raise HTTPException(status_code=404, detail="Image not found")
 
 
 # ============ Script Splitting ============
