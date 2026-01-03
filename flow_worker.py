@@ -291,6 +291,36 @@ class FlowWorker:
                     Clip.job_id == job_id
                 ).order_by(Clip.clip_index.asc()).all()
                 
+                # If no clips exist, create them from dialogue_json
+                if not clips:
+                    print(f"[FlowWorker] No clips found, creating from dialogue_json", flush=True)
+                    dialogue_data = json.loads(job.dialogue_json) if job.dialogue_json else {}
+                    dialogue_lines = dialogue_data.get("lines", [])
+                    
+                    if not dialogue_lines:
+                        raise ValueError("No dialogue lines found in job")
+                    
+                    for i, line in enumerate(dialogue_lines):
+                        clip = Clip(
+                            job_id=job_id,
+                            clip_index=i,
+                            dialogue_id=line.get("id", i + 1),
+                            dialogue_text=line.get("text", ""),
+                            status=ClipStatus.PENDING.value,
+                            start_frame=None,  # Flow will handle frames
+                            end_frame=None,
+                        )
+                        db.add(clip)
+                    
+                    db.commit()
+                    
+                    # Re-fetch clips
+                    clips = db.query(Clip).filter(
+                        Clip.job_id == job_id
+                    ).order_by(Clip.clip_index.asc()).all()
+                    
+                    add_job_log(db, job_id, f"Created {len(clips)} clips from dialogue", "INFO", "flow")
+                
                 if not clips:
                     raise ValueError("No clips found for job")
                 
