@@ -27,27 +27,27 @@ def has_valid_api_keys(
 ) -> bool:
     """
     Check if user has at least one valid API key.
+    NOTE: Only checks USER's keys, not environment/server keys.
+    Server keys are NOT used for routing decision.
     
     Args:
         db: Database session
         user_id: User ID to check
-        job_api_keys: Optional list of API keys provided with the job
+        job_api_keys: Optional list of API keys provided with the job (from UI)
         
     Returns:
         True if user has valid keys, False otherwise
     """
-    # Check 1: Job-provided keys (takes priority)
+    # Check 1: Job-provided keys from UI (takes priority)
     if job_api_keys and len(job_api_keys) > 0:
-        # At least one non-empty key provided
         valid_keys = [k for k in job_api_keys if k and k.strip() and not k.startswith("your-")]
         if valid_keys:
             return True
     
-    # Check 2: User's stored API keys
+    # Check 2: User's stored API keys in database
     if user_id:
         from models import UserAPIKey
         
-        # Get user's active and valid keys
         user_keys = db.query(UserAPIKey).filter(
             UserAPIKey.user_id == user_id,
             UserAPIKey.is_active == True,
@@ -57,6 +57,9 @@ def has_valid_api_keys(
         if user_keys and len(user_keys) > 0:
             return True
     
+    # NOTE: Do NOT check environment/server keys here!
+    # Server keys should NOT influence routing decision.
+    # Users without their own keys should go to FLOW backend.
     
     return False
 
