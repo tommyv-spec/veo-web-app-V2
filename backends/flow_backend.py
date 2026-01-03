@@ -195,7 +195,10 @@ class FlowBackend:
         storage_state_url: Optional[str] = None,
         headless: bool = True,
         download_dir: Optional[str] = None,
-        temp_dir: Optional[str] = None
+        temp_dir: Optional[str] = None,
+        proxy_server: Optional[str] = None,
+        proxy_username: Optional[str] = None,
+        proxy_password: Optional[str] = None
     ):
         """
         Initialize Flow backend.
@@ -206,6 +209,9 @@ class FlowBackend:
             headless: Whether to run browser headlessly
             download_dir: Directory for downloads
             temp_dir: Directory for temporary files
+            proxy_server: Proxy server URL (e.g., "http://proxy.example.com:8080")
+            proxy_username: Proxy username (optional)
+            proxy_password: Proxy password (optional)
         """
         if not PLAYWRIGHT_AVAILABLE:
             raise ImportError(
@@ -218,6 +224,11 @@ class FlowBackend:
         self.headless = headless
         self.download_dir = download_dir or tempfile.mkdtemp(prefix="flow_downloads_")
         self.temp_dir = temp_dir or tempfile.mkdtemp(prefix="flow_temp_")
+        
+        # Proxy configuration - from params or environment variables
+        self.proxy_server = proxy_server or os.environ.get("FLOW_PROXY_SERVER")
+        self.proxy_username = proxy_username or os.environ.get("FLOW_PROXY_USERNAME")
+        self.proxy_password = proxy_password or os.environ.get("FLOW_PROXY_PASSWORD")
         
         self._playwright = None
         self._browser: Optional[Browser] = None
@@ -235,34 +246,97 @@ class FlowBackend:
         self.stop()
     
     def start(self):
-        """Start the browser"""
-        print("[Flow] Starting browser...", flush=True)
+        """Start the browser with stealth measures and optional proxy"""
+        print("[Flow] Starting browser with stealth mode...", flush=True)
+        
+        # Log proxy status
+        if self.proxy_server:
+            masked_proxy = self.proxy_server
+            if '@' in masked_proxy:
+                # Mask password in URL
+                masked_proxy = masked_proxy.split('@')[-1]
+            print(f"[Flow] Using proxy: {masked_proxy}", flush=True)
+        else:
+            print("[Flow] No proxy configured (using direct connection)", flush=True)
         
         self._playwright = sync_playwright().start()
         
-        # Use persistent context for better session handling
-        self._browser = self._playwright.chromium.launch(
-            headless=self.headless,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-accelerated-2d-canvas",
-                "--no-first-run",
-                "--no-zygote",
-                "--disable-gpu",
-            ]
-        )
+        # Comprehensive stealth browser args
+        stealth_args = [
+            # Basic stealth
+            "--disable-blink-features=AutomationControlled",
+            
+            # Sandbox (required for containers)
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            
+            # Performance
+            "--disable-dev-shm-usage",
+            "--disable-accelerated-2d-canvas",
+            "--no-first-run",
+            "--no-zygote",
+            
+            # Make it look like a real browser
+            "--disable-infobars",
+            "--disable-extensions",
+            "--disable-plugins-discovery",
+            "--disable-default-apps",
+            
+            # Prevent detection
+            "--disable-component-update",
+            "--disable-background-networking",
+            "--disable-sync",
+            "--disable-translate",
+            "--hide-scrollbars",
+            "--mute-audio",
+            
+            # Window settings
+            "--window-size=1920,1080",
+            "--start-maximized",
+            
+            # GPU - enable for more realistic fingerprint
+            "--enable-webgl",
+            "--use-gl=swiftshader",
+        ]
+        
+        # Build launch options
+        launch_options = {
+            "headless": self.headless,
+            "args": stealth_args
+        }
+        
+        # Add proxy if configured
+        if self.proxy_server:
+            proxy_config = {"server": self.proxy_server}
+            if self.proxy_username and self.proxy_password:
+                proxy_config["username"] = self.proxy_username
+                proxy_config["password"] = self.proxy_password
+            launch_options["proxy"] = proxy_config
+            print(f"[Flow] Proxy configured: {self.proxy_server}", flush=True)
+        
+        self._browser = self._playwright.chromium.launch(**launch_options)
         
         # Get storage state
         storage_state = self._get_storage_state()
         
-        # Create context with storage state if available
+        # Create context with realistic settings
         context_options = {
             "accept_downloads": True,
             "viewport": {"width": 1920, "height": 1080},
-            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "screen": {"width": 1920, "height": 1080},
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            "locale": "en-US",
+            "timezone_id": "America/New_York",
+            "color_scheme": "dark",
+            "has_touch": False,
+            "is_mobile": False,
+            "device_scale_factor": 1,
+            "java_script_enabled": True,
+            "bypass_csp": False,
+            "extra_http_headers": {
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            "permissions": ["geolocation"],
         }
         
         if storage_state:
@@ -271,13 +345,162 @@ class FlowBackend:
         self._context = self._browser.new_context(**context_options)
         self._page = self._context.new_page()
         
-        # Add anti-detection scripts
+        # Comprehensive anti-detection scripts
         self._page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-            window.chrome = { runtime: {} };
+            // Remove webdriver flag
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            
+            // Add chrome runtime
+            window.chrome = {
+                runtime: {},
+                loadTimes: function() {},
+                csi: function() {},
+                app: {}
+            };
+            
+            // Fix permissions
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+            );
+            
+            // Fix plugins
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [
+                    { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
+                    { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+                    { name: 'Native Client', filename: 'internal-nacl-plugin' }
+                ]
+            });
+            
+            // Fix languages
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en']
+            });
+            
+            // Fix platform
+            Object.defineProperty(navigator, 'platform', {
+                get: () => 'Win32'
+            });
+            
+            // Fix hardware concurrency
+            Object.defineProperty(navigator, 'hardwareConcurrency', {
+                get: () => 8
+            });
+            
+            // Fix device memory
+            Object.defineProperty(navigator, 'deviceMemory', {
+                get: () => 8
+            });
+            
+            // Override the toString method
+            const oldCall = Function.prototype.call;
+            function call() {
+                return oldCall.apply(this, arguments);
+            }
+            Function.prototype.call = call;
+            
+            // Fix iframe detection
+            const originalAttachShadow = Element.prototype.attachShadow;
+            Element.prototype.attachShadow = function() {
+                return originalAttachShadow.apply(this, arguments);
+            };
+            
+            // Hide automation
+            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
         """)
         
-        print("[Flow] Browser started", flush=True)
+        print("[Flow] Browser started with stealth mode", flush=True)
+    
+    def _human_delay(self, min_ms: int = 500, max_ms: int = 1500):
+        """Add a random human-like delay"""
+        import random
+        delay = random.randint(min_ms, max_ms) / 1000
+        time.sleep(delay)
+    
+    def _human_click(self, locator, description: str = "element"):
+        """
+        Click an element with human-like behavior:
+        - Move mouse to element
+        - Small random offset
+        - Random delay before click
+        """
+        import random
+        
+        try:
+            # Wait for element to be visible
+            locator.wait_for(state="visible", timeout=10000)
+            
+            # Get element bounding box
+            box = locator.bounding_box()
+            if box:
+                # Calculate click position with slight randomness
+                x = box['x'] + box['width'] / 2 + random.randint(-5, 5)
+                y = box['y'] + box['height'] / 2 + random.randint(-3, 3)
+                
+                # Move mouse to element (human-like)
+                self._page.mouse.move(x, y, steps=random.randint(5, 15))
+                
+                # Small delay before clicking
+                time.sleep(random.uniform(0.1, 0.3))
+                
+                # Click
+                self._page.mouse.click(x, y)
+                print(f"[Flow] Human-clicked: {description}", flush=True)
+            else:
+                # Fallback to regular click
+                locator.click()
+                print(f"[Flow] Clicked (fallback): {description}", flush=True)
+                
+        except Exception as e:
+            print(f"[Flow] Human click failed for {description}: {e}", flush=True)
+            # Fallback to force click
+            locator.click(force=True)
+    
+    def _human_type(self, locator, text: str, description: str = "field"):
+        """
+        Type text with human-like behavior:
+        - Variable typing speed
+        - Occasional pauses
+        """
+        import random
+        
+        try:
+            locator.click()
+            self._human_delay(200, 400)
+            
+            # Clear existing text
+            locator.fill("")
+            self._human_delay(100, 200)
+            
+            # Type with variable speed
+            for i, char in enumerate(text):
+                locator.type(char, delay=random.randint(10, 50))
+                
+                # Occasional longer pause (like thinking)
+                if random.random() < 0.02:
+                    time.sleep(random.uniform(0.2, 0.5))
+            
+            print(f"[Flow] Human-typed into: {description} ({len(text)} chars)", flush=True)
+            
+        except Exception as e:
+            print(f"[Flow] Human type failed for {description}: {e}, using fill()", flush=True)
+            locator.fill(text)
+    
+    def _scroll_into_view(self, locator):
+        """Scroll element into view with human-like behavior"""
+        import random
+        try:
+            locator.scroll_into_view_if_needed()
+            self._human_delay(200, 400)
+        except Exception:
+            pass
     
     def stop(self):
         """Stop the browser"""
@@ -1086,6 +1309,9 @@ class FlowBackend:
             # Take screenshot before Generate
             self._screenshot("before_generate")
             
+            # Add human-like delay before generating
+            self._human_delay(1000, 2000)
+            
             # === CLICK GENERATE BUTTON ===
             # The Generate button is the arrow icon (→) at the bottom right of the prompt area
             # It uses Material Icons with text 'arrow_forward'
@@ -1093,14 +1319,15 @@ class FlowBackend:
             
             generate_clicked = False
             
-            # Method 1: Click the arrow_forward icon directly (same as reuse mode)
+            # Method 1: Click the arrow_forward icon directly with human behavior
             try:
                 arrow_icon = self._page.locator("i:text('arrow_forward')").first
                 if arrow_icon.count() > 0 and arrow_icon.is_visible():
-                    print("[Flow] Found arrow_forward icon, clicking...", flush=True)
-                    arrow_icon.click(force=True)
+                    print("[Flow] Found arrow_forward icon, human-clicking...", flush=True)
+                    self._scroll_into_view(arrow_icon)
+                    self._human_click(arrow_icon, "arrow_forward icon")
                     generate_clicked = True
-                    print("[Flow] ✓ Clicked arrow_forward icon", flush=True)
+                    print("[Flow] ✓ Human-clicked arrow_forward icon", flush=True)
             except Exception as e:
                 print(f"[Flow] arrow_forward icon click failed: {e}", flush=True)
             
@@ -1110,10 +1337,10 @@ class FlowBackend:
                     # Find button containing the arrow icon
                     arrow_btn = self._page.locator("button:has(i:text('arrow_forward'))").first
                     if arrow_btn.count() > 0:
-                        print("[Flow] Found button with arrow icon, clicking...", flush=True)
-                        arrow_btn.click(force=True)
+                        print("[Flow] Found button with arrow icon, human-clicking...", flush=True)
+                        self._human_click(arrow_btn, "button with arrow icon")
                         generate_clicked = True
-                        print("[Flow] ✓ Clicked button with arrow icon", flush=True)
+                        print("[Flow] ✓ Human-clicked button with arrow icon", flush=True)
                 except Exception as e:
                     print(f"[Flow] Button with arrow icon failed: {e}", flush=True)
             
@@ -1123,7 +1350,7 @@ class FlowBackend:
                     btn = self._page.locator("div.sc-408537d4-1.eiHkev > button").first
                     if btn.count() > 0 and btn.is_visible():
                         print("[Flow] Trying CSS class selector...", flush=True)
-                        btn.click(force=True)
+                        self._human_click(btn, "CSS selector button")
                         generate_clicked = True
                         print("[Flow] ✓ Clicked via CSS selector", flush=True)
                 except Exception as e:
@@ -1145,7 +1372,7 @@ class FlowBackend:
                                     inner_html = btn.inner_html()
                                     if 'arrow' in inner_html.lower() or 'svg' in inner_html.lower():
                                         print(f"[Flow] Found button {i} with arrow/svg, clicking...", flush=True)
-                                        btn.click(force=True)
+                                        self._human_click(btn, f"button {i}")
                                         generate_clicked = True
                                         print(f"[Flow] ✓ Clicked button {i}", flush=True)
                                         break
