@@ -2,7 +2,7 @@
 # Uses Playwright's official Docker image for reliable browser automation
 
 # Use Playwright's official Python image (includes browsers + dependencies)
-FROM mcr.microsoft.com/playwright/python:v1.48.0-noble
+FROM mcr.microsoft.com/playwright/python:v1.57.0-noble
 
 # Set working directory
 WORKDIR /app
