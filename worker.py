@@ -223,14 +223,15 @@ class JobWorker:
                     last_resume_check = time.time()
                     self._resume_waiting_jobs()
                 
-                # Log key pool status every 60 seconds (helps debug parallel job issues)
+                # Log key pool status every 60 seconds ONLY if there are jobs running
                 if time.time() - last_status_log > 60:
                     last_status_log = time.time()
                     try:
                         from config import key_pool, api_keys_config
-                        if key_pool and api_keys_config:
+                        running_count = len(self.running_jobs)
+                        # Only log if there are jobs running (reduces log clutter)
+                        if running_count > 0 and key_pool and api_keys_config:
                             status = key_pool.get_pool_status_summary(api_keys_config)
-                            running_count = len(self.running_jobs)
                             print(f"[KeyPool] Status: {status['available']} available, {status['rate_limited']} rate-limited, {status['invalid']} invalid | {running_count} jobs running", flush=True)
                     except Exception:
                         pass
@@ -301,13 +302,7 @@ class JobWorker:
             # Get pending jobs - only API backend (or legacy jobs without backend set)
             from sqlalchemy import or_
             
-            # DEBUG: First check all pending jobs
-            all_pending = db.query(Job).filter(Job.status == JobStatus.PENDING.value).all()
-            for j in all_pending:
-                backend_val = getattr(j, 'backend', 'NO_ATTR')
-                print(f"[Worker] DEBUG: Pending job {j.id[:8]} backend={backend_val}", flush=True)
-            
-            # Now filter for API jobs only
+            # Filter for API jobs only (don't log Flow jobs - they're handled by Flow worker)
             pending = db.query(Job).filter(
                 Job.status == JobStatus.PENDING.value,
                 or_(Job.backend == "api", Job.backend == None)  # Only API jobs
@@ -315,7 +310,9 @@ class JobWorker:
                 self.max_workers - len(self.running_jobs)
             ).all()
             
-            print(f"[Worker] Found {len(pending)} API jobs to process (filtered from {len(all_pending)} total pending)", flush=True)
+            # Only log if there are jobs to process (reduces clutter)
+            if pending:
+                print(f"[Worker] Found {len(pending)} API jobs to process", flush=True)
             
             for job in pending:
                 if job.id not in self.running_jobs:
