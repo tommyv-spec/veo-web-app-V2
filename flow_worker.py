@@ -488,6 +488,10 @@ class FlowWorker:
         from models import add_job_log, get_db, Clip
         
         # Create FlowJob from database clips
+        # Prompts are pre-generated at job creation time in main.py - no duplication needed!
+        from pathlib import Path
+        
+        # Build clips data - prompts already stored in database
         clips_data = []
         for clip in clips:
             # Find actual frame paths
@@ -495,7 +499,7 @@ class FlowWorker:
             end_frame = None
             
             if clip.start_frame:
-                # Check temp dir first
+                # Check temp dir first (downloaded from R2)
                 temp_path = os.path.join(frames_dir, os.path.basename(clip.start_frame))
                 if os.path.exists(temp_path):
                     start_frame = temp_path
@@ -509,10 +513,19 @@ class FlowWorker:
                 elif os.path.exists(clip.end_frame):
                     end_frame = clip.end_frame
             
+            # Use prompt from database (generated at job creation time in main.py)
+            prompt = clip.prompt_text if hasattr(clip, 'prompt_text') and clip.prompt_text else None
+            
+            if prompt:
+                print(f"[FlowWorker] Clip {clip.clip_index}: Using pre-generated prompt ({len(prompt)} chars)", flush=True)
+            else:
+                print(f"[FlowWorker] Clip {clip.clip_index}: No pre-generated prompt, will use fallback", flush=True)
+            
             clips_data.append({
                 "dialogue_text": clip.dialogue_text,
                 "start_frame": start_frame,
                 "end_frame": end_frame,
+                "prompt": prompt,  # Pre-generated prompt from database
             })
         
         # Get existing project URL if resuming
