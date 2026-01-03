@@ -44,6 +44,7 @@ class FlowClip:
     end_frame_path: Optional[str] = None
     start_frame_key: Optional[str] = None  # S3 key if using object storage
     end_frame_key: Optional[str] = None    # S3 key if using object storage
+    prompt: Optional[str] = None  # Pre-built prompt from API prompt engine
     
     # Output tracking
     flow_clip_id: Optional[str] = None
@@ -689,7 +690,13 @@ class FlowBackend:
         if self._cancelled:
             return False
         
-        prompt = get_prompt(clip.dialogue_text, language)
+        # Use pre-built prompt from API engine if available, otherwise use simple fallback
+        if clip.prompt:
+            prompt = clip.prompt
+            print(f"[Flow] Using API-generated prompt ({len(prompt)} chars)", flush=True)
+        else:
+            prompt = get_prompt(clip.dialogue_text, language)
+            print(f"[Flow] Using fallback prompt ({len(prompt)} chars)", flush=True)
         
         try:
             if is_first_clip:
@@ -697,15 +704,41 @@ class FlowBackend:
                 print(f"[Flow] Setting up first clip with frames...", flush=True)
                 
                 # Select Frames to Video mode
-                self._page.click("text=Text to Video")
-                print("[Flow] Opened mode dropdown", flush=True)
-                time.sleep(1)
+                print("[Flow] Selecting 'Frames to Video' mode...", flush=True)
                 
-                self._page.click("text=Frames to Video")
-                print("[Flow] Selected Frames to Video", flush=True)
-                time.sleep(2)
+                # Click the mode dropdown (shows "Text to Video" by default)
+                mode_dropdown = self._page.locator("text=Text to Video").first
+                if mode_dropdown.count() > 0:
+                    mode_dropdown.click()
+                    print("[Flow] Opened mode dropdown", flush=True)
+                    time.sleep(1)
+                    
+                    # Click "Frames to Video" option
+                    frames_option = self._page.locator("text=Frames to Video").first
+                    if frames_option.count() > 0:
+                        frames_option.click()
+                        print("[Flow] Selected Frames to Video", flush=True)
+                        time.sleep(2)
+                    else:
+                        print("[Flow] WARNING: 'Frames to Video' option not found!", flush=True)
+                else:
+                    # Maybe already in Frames to Video mode?
+                    if self._page.locator("text=Frames to Video").count() > 0:
+                        print("[Flow] Already in Frames to Video mode", flush=True)
+                    else:
+                        print("[Flow] WARNING: Mode dropdown not found!", flush=True)
                 
                 self._check_and_dismiss_popup()
+                
+                # Verify we're in Frames to Video mode by checking for frame upload buttons
+                time.sleep(1)
+                frame_buttons = self._page.locator("button.sc-d02e9a37-1.hvUQuN")
+                if frame_buttons.count() == 0:
+                    print("[Flow] WARNING: Frame upload buttons not visible - mode may not be correct!", flush=True)
+                    # Take screenshot for debugging
+                    self._page.screenshot(path="/tmp/flow_mode_error.png")
+                else:
+                    print(f"[Flow] Found {frame_buttons.count()} frame upload button(s)", flush=True)
                 
                 # Upload START frame
                 if clip.start_frame_path:
@@ -791,20 +824,135 @@ class FlowBackend:
                 clip.status = "generating"
                 return True
             
-            # Wait for Generate button and click
-            generate_btn = self._page.locator("div.sc-408537d4-1.eiHkev > button")
-            print("[Flow] Waiting for Generate button to be enabled...", flush=True)
+            # Wait for Generate button and click it properly
+            print("[Flow] Looking for Generate button...", flush=True)
             
-            for _ in range(30):
-                if not generate_btn.is_disabled():
-                    print("[Flow] Generate button is enabled!", flush=True)
-                    break
+            # Take screenshot before trying to click Generate
+            try:
+                self._page.screenshot(path="/tmp/flow_before_generate.png")
+                print("[Flow] Screenshot saved: /tmp/flow_before_generate.png", flush=True)
+            except Exception:
+                pass
+            
+            # Try multiple selectors for the Generate button
+            generate_btn = None
+            generate_selectors = [
+                "div.sc-408537d4-1.eiHkev > button",  # Original selector
+                "button:has-text('Generate')",
+                "[aria-label='Generate']",
+                "button[type='submit']",
+                "button.generate-button",
+                # Look for the arrow/send icon button at the bottom right
+                "button:has(svg)",
+                "button:near(:text('Expand'))",
+            ]
+            
+            for selector in generate_selectors:
+                try:
+                    btn = self._page.locator(selector).first
+                    if btn.count() > 0 and btn.is_visible():
+                        # Check if it's not disabled
+                        if not btn.is_disabled():
+                            generate_btn = btn
+                            print(f"[Flow] Found Generate button with selector: {selector}", flush=True)
+                            break
+                        else:
+                            print(f"[Flow] Button found but disabled: {selector}", flush=True)
+                except Exception as e:
+                    pass
+            
+            if not generate_btn:
+                # Try finding by the arrow icon (common in chat-like interfaces)
+                try:
+                    # The generate button might be the arrow at bottom right of the prompt box
+                    arrow_btn = self._page.locator("button").filter(has=self._page.locator("svg")).last
+                    if arrow_btn.count() > 0 and arrow_btn.is_visible():
+                        generate_btn = arrow_btn
+                        print("[Flow] Found Generate button by arrow icon", flush=True)
+                except Exception:
+                    pass
+            
+            if not generate_btn:
+                print("[Flow] ERROR: Could not find Generate button!", flush=True)
+                self._page.screenshot(path="/tmp/flow_no_generate_btn.png")
+                raise RuntimeError("Generate button not found")
+            
+            # Wait for button to be enabled
+            print("[Flow] Waiting for Generate button to be enabled...", flush=True)
+            for attempt in range(30):
+                try:
+                    if not generate_btn.is_disabled():
+                        print("[Flow] Generate button is enabled!", flush=True)
+                        break
+                except Exception:
+                    pass
                 time.sleep(0.5)
             
+            # Click the button (not keyboard Enter!)
+            print("[Flow] Clicking Generate button...", flush=True)
             time.sleep(1)
-            generate_btn.focus()
-            time.sleep(0.3)
-            self._page.keyboard.press("Enter")
+            
+            try:
+                generate_btn.click(force=True)
+                print("[Flow] Clicked Generate button", flush=True)
+            except Exception as e:
+                print(f"[Flow] Direct click failed: {e}, trying JavaScript click...", flush=True)
+                try:
+                    generate_btn.evaluate("el => el.click()")
+                    print("[Flow] JavaScript click succeeded", flush=True)
+                except Exception as e2:
+                    print(f"[Flow] JavaScript click also failed: {e2}", flush=True)
+                    # Last resort: keyboard
+                    generate_btn.focus()
+                    self._page.keyboard.press("Enter")
+                    print("[Flow] Used keyboard Enter as fallback", flush=True)
+            
+            # Wait and verify something is happening
+            time.sleep(3)
+            
+            # Take screenshot after clicking to verify
+            try:
+                self._page.screenshot(path="/tmp/flow_after_generate.png")
+                print("[Flow] Screenshot saved: /tmp/flow_after_generate.png", flush=True)
+            except Exception:
+                pass
+            
+            # Look for signs that generation started
+            generation_started = False
+            
+            # Check for loading indicators or status changes
+            loading_indicators = [
+                "text=Generating",
+                "text=Loading",
+                "text=Processing",
+                ".loading",
+                ".spinner",
+                "[role='progressbar']",
+                "text=Queued",
+            ]
+            
+            for indicator in loading_indicators:
+                try:
+                    if self._page.locator(indicator).count() > 0:
+                        print(f"[Flow] Found generation indicator: {indicator}", flush=True)
+                        generation_started = True
+                        break
+                except Exception:
+                    pass
+            
+            # Also check if a video element or clip container appeared
+            try:
+                video_count = self._page.locator("video").count()
+                clip_containers = self._page.locator("[data-index]").count()
+                if video_count > 0 or clip_containers > 0:
+                    print(f"[Flow] Found {video_count} videos, {clip_containers} clip containers", flush=True)
+                    generation_started = True
+            except Exception:
+                pass
+            
+            if not generation_started:
+                print("[Flow] WARNING: Could not verify generation started - continuing anyway", flush=True)
+            
             print(f"[Flow] Clip {clip.clip_index + 1}: Generation started", flush=True)
             time.sleep(5)
             
@@ -1085,7 +1233,7 @@ def create_flow_job_from_db(
     
     Args:
         job_id: Job ID
-        clips_data: List of clip dicts with dialogue_text, start_frame, end_frame
+        clips_data: List of clip dicts with dialogue_text, start_frame, end_frame, prompt
         project_url: Existing project URL if resuming
         
     Returns:
@@ -1098,6 +1246,7 @@ def create_flow_job_from_db(
             dialogue_text=clip_data.get("dialogue_text", ""),
             start_frame_path=clip_data.get("start_frame"),
             end_frame_path=clip_data.get("end_frame"),
+            prompt=clip_data.get("prompt"),  # Pre-built prompt from API engine
         ))
     
     return FlowJob(
