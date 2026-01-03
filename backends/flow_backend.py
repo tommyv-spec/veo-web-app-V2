@@ -260,22 +260,30 @@ class FlowBackend:
         # Get storage state
         storage_state = self._get_storage_state()
         
-        # Create context with realistic settings
+        # Create context with settings that match OctoBrowser fingerprint
+        # OctoBrowser typically uses realistic Windows Chrome fingerprints
         context_options = {
             "accept_downloads": True,
             "viewport": {"width": 1920, "height": 1080},
             "screen": {"width": 1920, "height": 1080},
-            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            # Use a recent Chrome user agent - should match OctoBrowser's setting
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
             "locale": "en-US",
-            "timezone_id": "America/New_York",
-            "color_scheme": "dark",
+            # Use a European timezone to match your location
+            "timezone_id": "Europe/Rome",
+            "color_scheme": "light",  # Most users use light mode
             "has_touch": False,
             "is_mobile": False,
             "device_scale_factor": 1,
             "java_script_enabled": True,
             "bypass_csp": False,
             "extra_http_headers": {
-                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Language": "en-US,en;q=0.9,it;q=0.8",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Sec-Ch-Ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+                "Sec-Ch-Ua-Mobile": "?0",
+                "Sec-Ch-Ua-Platform": '"Windows"',
             },
             "permissions": ["geolocation"],
         }
@@ -291,30 +299,94 @@ class FlowBackend:
         self._context = self._browser.new_context(**context_options)
         self._page = self._context.new_page()
         
-        # Comprehensive anti-detection scripts
+        # Comprehensive anti-detection scripts - match OctoBrowser fingerprint
         self._page.add_init_script("""
+            // Remove webdriver flag
             Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            window.chrome = { runtime: {}, loadTimes: function() {}, csi: function() {}, app: {} };
+            
+            // Add chrome runtime (like real Chrome)
+            window.chrome = { 
+                runtime: {
+                    connect: function() {},
+                    sendMessage: function() {},
+                    onMessage: { addListener: function() {} }
+                }, 
+                loadTimes: function() { return {}; }, 
+                csi: function() { return {}; }, 
+                app: {
+                    isInstalled: false,
+                    InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
+                    RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' }
+                }
+            };
+            
+            // Fix permissions
             const originalQuery = window.navigator.permissions.query;
             window.navigator.permissions.query = (parameters) => (
                 parameters.name === 'notifications' ?
                     Promise.resolve({ state: Notification.permission }) :
                     originalQuery(parameters)
             );
+            
+            // Fix plugins (match real Chrome)
             Object.defineProperty(navigator, 'plugins', {
-                get: () => [
-                    { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
-                    { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
-                    { name: 'Native Client', filename: 'internal-nacl-plugin' }
-                ]
+                get: () => {
+                    const plugins = [
+                        { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+                        { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+                        { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' }
+                    ];
+                    plugins.length = 3;
+                    return plugins;
+                }
             });
-            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            
+            // Fix languages
+            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en', 'it'] });
+            
+            // Fix platform
             Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+            
+            // Fix hardware (realistic values)
             Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
             Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+            
+            // Fix maxTouchPoints (desktop = 0)
+            Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 0 });
+            
+            // Fix connection info
+            if (navigator.connection) {
+                Object.defineProperty(navigator.connection, 'rtt', { get: () => 50 });
+            }
+            
+            // Fix WebGL vendor/renderer (important for fingerprinting)
+            const getParameterOriginal = WebGLRenderingContext.prototype.getParameter;
+            WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                if (parameter === 37445) return 'Google Inc. (Intel)';  // UNMASKED_VENDOR_WEBGL
+                if (parameter === 37446) return 'ANGLE (Intel, Intel(R) UHD Graphics 630, OpenGL 4.1)';  // UNMASKED_RENDERER_WEBGL
+                return getParameterOriginal.call(this, parameter);
+            };
+            
+            // Fix canvas fingerprint (add slight noise)
+            const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+            HTMLCanvasElement.prototype.toDataURL = function(type) {
+                if (type === 'image/png' && this.width > 16 && this.height > 16) {
+                    const ctx = this.getContext('2d');
+                    if (ctx) {
+                        const imageData = ctx.getImageData(0, 0, 1, 1);
+                        imageData.data[0] = imageData.data[0] ^ 1;  // Tiny modification
+                        ctx.putImageData(imageData, 0, 0);
+                    }
+                }
+                return originalToDataURL.apply(this, arguments);
+            };
+            
+            // Remove automation artifacts
             delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
             delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
             delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+            delete window.__playwright__;
+            delete window.__pw_manual;
         """)
         
         print("[Flow] Browser started with stealth mode", flush=True)
