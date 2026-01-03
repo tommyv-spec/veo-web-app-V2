@@ -388,47 +388,283 @@ class FlowBackend:
         
         return project_url
     
-    def _upload_frame(self, image_path: str, frame_name: str = "frame"):
-        """Upload a frame image"""
+    def _upload_frame_with_button(
+        self, 
+        image_path: str, 
+        button_selector: str, 
+        is_first: bool = True,
+        frame_name: str = "frame"
+    ):
+        """
+        Click a button and upload a frame, handling both:
+        - Direct file chooser popup
+        - Modal with separate Upload button
+        
+        Args:
+            image_path: Path to the image file
+            button_selector: CSS selector for the add frame button
+            is_first: Whether this is the first (start) or last (end) button
+            frame_name: Name for logging
+        """
+        print(f"[Flow] Uploading {frame_name}: {image_path}", flush=True)
+        
+        # Verify file exists
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"Image file not found: {image_path}")
+        
+        print(f"[Flow] Image file exists, size: {os.path.getsize(image_path)} bytes", flush=True)
+        
         self._check_and_dismiss_popup()
         
-        with self._page.expect_file_chooser() as fc_info:
-            self._page.locator("text=Upload").first.click(force=True)
+        # Find the button
+        if is_first:
+            btn = self._page.locator(button_selector).first
+        else:
+            btn = self._page.locator(button_selector).last
         
-        file_chooser = fc_info.value
-        file_chooser.set_files(image_path)
-        print(f"[Flow] Uploaded image for {frame_name}", flush=True)
+        if btn.count() == 0:
+            print(f"[Flow] WARNING: Button not found with selector: {button_selector}", flush=True)
+            # Take screenshot
+            self._page.screenshot(path=f"/tmp/flow_button_not_found_{frame_name}.png")
+            raise RuntimeError(f"Add frame button not found")
+        
+        # Try to capture file chooser when clicking the button
+        # This handles the case where the button directly opens file picker
+        file_chooser = None
+        
+        try:
+            print(f"[Flow] Clicking {frame_name} button (expecting file chooser)...", flush=True)
+            
+            # Set up file chooser listener BEFORE clicking
+            with self._page.expect_file_chooser(timeout=5000) as fc_info:
+                btn.click(force=True)
+                print(f"[Flow] Clicked {frame_name} button", flush=True)
+            
+            # If we get here, the button directly opened a file chooser
+            file_chooser = fc_info.value
+            print(f"[Flow] File chooser opened directly from button click", flush=True)
+            
+        except Exception as e:
+            # File chooser didn't open directly - might need to click "Upload" in a modal
+            print(f"[Flow] No direct file chooser (this is normal): {e}", flush=True)
+            print(f"[Flow] Looking for Upload button in modal...", flush=True)
+            
+            time.sleep(2)
+            self._check_and_dismiss_popup()
+            
+            # Look for an Upload button
+            upload_btn = None
+            for selector in ["text=Upload", "button:has-text('Upload')", "[aria-label='Upload']", "text=Choose file"]:
+                try:
+                    candidate = self._page.locator(selector).first
+                    if candidate.count() > 0 and candidate.is_visible():
+                        upload_btn = candidate
+                        print(f"[Flow] Found upload button with selector: {selector}", flush=True)
+                        break
+                except Exception:
+                    pass
+            
+            if upload_btn:
+                try:
+                    with self._page.expect_file_chooser(timeout=10000) as fc_info:
+                        upload_btn.click(force=True)
+                        print(f"[Flow] Clicked Upload button", flush=True)
+                    file_chooser = fc_info.value
+                except Exception as e2:
+                    print(f"[Flow] Failed to get file chooser from Upload button: {e2}", flush=True)
+                    self._page.screenshot(path=f"/tmp/flow_upload_failed_{frame_name}.png")
+                    raise
+            else:
+                print(f"[Flow] No Upload button found", flush=True)
+                self._page.screenshot(path=f"/tmp/flow_no_upload_btn_{frame_name}.png")
+                raise RuntimeError("Could not find way to upload file")
+        
+        # Upload the file
+        if file_chooser:
+            file_chooser.set_files(image_path)
+            print(f"[Flow] File selected: {os.path.basename(image_path)}", flush=True)
+        else:
+            raise RuntimeError("No file chooser available")
+        
+        time.sleep(3)
+        self._check_and_dismiss_popup()
+        
+        # Wait for and handle crop dialog
+        print(f"[Flow] Waiting for crop dialog...", flush=True)
+        try:
+            self._page.wait_for_selector("text=Crop and Save", timeout=15000)
+            print(f"[Flow] Crop dialog opened for {frame_name}", flush=True)
+        except Exception as e:
+            # Maybe no crop dialog needed, or it auto-cropped
+            print(f"[Flow] Crop dialog not found (may not be needed): {e}", flush=True)
+            # Check if image was already accepted
+            time.sleep(2)
+            return
+        
+        time.sleep(1)
+        self._check_and_dismiss_popup()
+        
+        # Try to select Portrait orientation
+        print(f"[Flow] Selecting orientation...", flush=True)
+        try:
+            # Look for orientation dropdown
+            orientation_selectors = [
+                "div.sc-19de2353-4.boKhUT button.sc-a84519cc-0.fsaXDA",
+                "button:has-text('Landscape')",
+                "button:has-text('Portrait')",
+                "[aria-label='Aspect ratio']"
+            ]
+            
+            orientation_btn = None
+            for selector in orientation_selectors:
+                try:
+                    candidate = self._page.locator(selector).first
+                    if candidate.count() > 0 and candidate.is_visible():
+                        orientation_btn = candidate
+                        break
+                except Exception:
+                    pass
+            
+            if orientation_btn:
+                for attempt in range(3):
+                    try:
+                        orientation_btn.click()
+                        time.sleep(0.5)
+                        
+                        # Look for Portrait option
+                        portrait_opt = self._page.locator("text=Portrait").first
+                        if portrait_opt.count() > 0 and portrait_opt.is_visible():
+                            portrait_opt.click(force=True)
+                            print(f"[Flow] Selected Portrait for {frame_name}", flush=True)
+                            break
+                    except Exception:
+                        pass
+                    time.sleep(0.5)
+        except Exception as e:
+            print(f"[Flow] Could not set orientation (continuing anyway): {e}", flush=True)
+        
+        time.sleep(1)
+        
+        # Click Crop and Save
+        try:
+            self._page.click("text=Crop and Save")
+            print(f"[Flow] Clicked Crop and Save for {frame_name}", flush=True)
+        except Exception as e:
+            print(f"[Flow] Could not click Crop and Save: {e}", flush=True)
+            # Try alternative
+            try:
+                self._page.click("text=Save")
+                print(f"[Flow] Clicked Save instead", flush=True)
+            except Exception:
+                pass
+        
+        time.sleep(2)
+        print(f"[Flow] {frame_name} upload complete", flush=True)
+
+    def _upload_frame(self, image_path: str, frame_name: str = "frame"):
+        """Upload a frame image"""
+        print(f"[Flow] Starting upload for {frame_name}: {image_path}", flush=True)
+        
+        # Verify the file exists
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"Image file not found: {image_path}")
+        
+        print(f"[Flow] Image file exists, size: {os.path.getsize(image_path)} bytes", flush=True)
+        
+        self._check_and_dismiss_popup()
+        
+        try:
+            # Try to find and click the Upload button with file chooser
+            print("[Flow] Waiting for file chooser...", flush=True)
+            with self._page.expect_file_chooser(timeout=10000) as fc_info:
+                # Try multiple selectors for the upload button
+                upload_clicked = False
+                for selector in ["text=Upload", "button:has-text('Upload')", "[aria-label='Upload']"]:
+                    try:
+                        btn = self._page.locator(selector).first
+                        if btn.count() > 0 and btn.is_visible():
+                            btn.click(force=True)
+                            upload_clicked = True
+                            print(f"[Flow] Clicked upload button with selector: {selector}", flush=True)
+                            break
+                    except Exception as e:
+                        print(f"[Flow] Selector {selector} failed: {e}", flush=True)
+                
+                if not upload_clicked:
+                    raise RuntimeError("Could not find upload button")
+            
+            file_chooser = fc_info.value
+            file_chooser.set_files(image_path)
+            print(f"[Flow] Uploaded image for {frame_name}", flush=True)
+            
+        except Exception as e:
+            print(f"[Flow] Error during file upload: {e}", flush=True)
+            # Take screenshot for debugging
+            try:
+                screenshot_path = f"/tmp/flow_upload_error_{frame_name}.png"
+                self._page.screenshot(path=screenshot_path)
+                print(f"[Flow] Debug screenshot saved: {screenshot_path}", flush=True)
+            except Exception:
+                pass
+            raise
+        
         time.sleep(3)
         
         self._check_and_dismiss_popup()
         
         # Wait for crop dialog
-        self._page.wait_for_selector("text=Crop and Save", timeout=10000)
-        print(f"[Flow] Crop dialog opened for {frame_name}", flush=True)
+        print("[Flow] Waiting for crop dialog...", flush=True)
+        try:
+            self._page.wait_for_selector("text=Crop and Save", timeout=15000)
+            print(f"[Flow] Crop dialog opened for {frame_name}", flush=True)
+        except Exception as e:
+            print(f"[Flow] Crop dialog not found: {e}", flush=True)
+            # Take screenshot
+            try:
+                self._page.screenshot(path=f"/tmp/flow_crop_error_{frame_name}.png")
+            except Exception:
+                pass
+            raise
+        
         time.sleep(1)
         
         self._check_and_dismiss_popup()
         
         # Select Portrait orientation
+        print("[Flow] Selecting Portrait orientation...", flush=True)
         landscape_btn = self._page.locator("div.sc-19de2353-4.boKhUT button.sc-a84519cc-0.fsaXDA")
         
         for attempt in range(5):
-            landscape_btn.focus()
-            time.sleep(0.3)
-            self._page.keyboard.press("Space")
-            time.sleep(0.5)
-            
-            if self._page.locator("[role='option']:has-text('Portrait')").is_visible():
-                print("[Flow] Dropdown opened", flush=True)
-                break
+            try:
+                landscape_btn.focus()
+                time.sleep(0.3)
+                self._page.keyboard.press("Space")
+                time.sleep(0.5)
+                
+                if self._page.locator("[role='option']:has-text('Portrait')").is_visible():
+                    print("[Flow] Dropdown opened", flush=True)
+                    break
+            except Exception as e:
+                print(f"[Flow] Attempt {attempt + 1} to open dropdown failed: {e}", flush=True)
         
         time.sleep(1)
-        self._page.locator("text=Portrait").first.click(force=True)
-        print(f"[Flow] Selected Portrait for {frame_name}", flush=True)
+        
+        try:
+            self._page.locator("text=Portrait").first.click(force=True)
+            print(f"[Flow] Selected Portrait for {frame_name}", flush=True)
+        except Exception as e:
+            print(f"[Flow] Could not select Portrait: {e}", flush=True)
+            # Continue anyway - might already be in portrait mode
+        
         time.sleep(1)
         
-        self._page.click("text=Crop and Save")
-        print(f"[Flow] Clicked Crop and Save for {frame_name}", flush=True)
+        try:
+            self._page.click("text=Crop and Save")
+            print(f"[Flow] Clicked Crop and Save for {frame_name}", flush=True)
+        except Exception as e:
+            print(f"[Flow] Could not click Crop and Save: {e}", flush=True)
+            raise
+        
         time.sleep(2)
     
     def _submit_clip(
@@ -473,23 +709,22 @@ class FlowBackend:
                 
                 # Upload START frame
                 if clip.start_frame_path:
-                    self._page.locator("button.sc-d02e9a37-1.hvUQuN").first.click(force=True)
-                    print("[Flow] Clicked Add START frame button", flush=True)
-                    time.sleep(2)
-                    self._upload_frame(clip.start_frame_path, "START frame")
+                    self._upload_frame_with_button(
+                        clip.start_frame_path, 
+                        "button.sc-d02e9a37-1.hvUQuN", 
+                        is_first=True,
+                        frame_name="START frame"
+                    )
                 
                 # Upload END frame
                 if clip.end_frame_path:
                     self._check_and_dismiss_popup()
-                    
-                    end_frame_btn = self._page.locator("button.sc-d02e9a37-1.hvUQuN").last
-                    end_frame_btn.click(force=True)
-                    print("[Flow] First click on END frame button", flush=True)
-                    time.sleep(10)
-                    end_frame_btn.click(force=True)
-                    print("[Flow] Second click on END frame button", flush=True)
-                    time.sleep(2)
-                    self._upload_frame(clip.end_frame_path, "END frame")
+                    self._upload_frame_with_button(
+                        clip.end_frame_path,
+                        "button.sc-d02e9a37-1.hvUQuN",
+                        is_first=False,
+                        frame_name="END frame"
+                    )
                 
                 # Enter prompt
                 textarea = self._page.locator("#PINHOLE_TEXT_AREA_ELEMENT_ID")
@@ -505,21 +740,21 @@ class FlowBackend:
                 
                 if clip.start_frame_path:
                     self._check_and_dismiss_popup()
-                    self._page.locator("button.sc-d02e9a37-1.hvUQuN").first.click(force=True)
-                    print(f"[Flow] Clicked Add START frame button", flush=True)
-                    time.sleep(2)
-                    self._upload_frame(clip.start_frame_path, "START frame")
+                    self._upload_frame_with_button(
+                        clip.start_frame_path,
+                        "button.sc-d02e9a37-1.hvUQuN",
+                        is_first=True,
+                        frame_name="START frame"
+                    )
                 
                 if clip.end_frame_path:
                     self._check_and_dismiss_popup()
-                    end_frame_btn = self._page.locator("button.sc-d02e9a37-1.hvUQuN").last
-                    end_frame_btn.click(force=True)
-                    print(f"[Flow] First click on END frame button", flush=True)
-                    time.sleep(10)
-                    end_frame_btn.click(force=True)
-                    print(f"[Flow] Second click on END frame button", flush=True)
-                    time.sleep(2)
-                    self._upload_frame(clip.end_frame_path, "END frame")
+                    self._upload_frame_with_button(
+                        clip.end_frame_path,
+                        "button.sc-d02e9a37-1.hvUQuN",
+                        is_first=False,
+                        frame_name="END frame"
+                    )
                 
                 # Enter prompt
                 textarea = self._page.locator("#PINHOLE_TEXT_AREA_ELEMENT_ID")
