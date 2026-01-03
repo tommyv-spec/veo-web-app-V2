@@ -775,6 +775,11 @@ class JobWorker:
                 if not job:
                     return
                 
+                # Check if this is a Flow backend job - skip it (Flow worker handles it)
+                if getattr(job, 'backend', None) == 'flow':
+                    print(f"[Worker] Job {job_id[:8]} is Flow backend, skipping (Flow worker will handle)", flush=True)
+                    return
+                
                 # Check if already running (another thread got it)
                 if job.status != JobStatus.PENDING.value:
                     print(f"[Worker] Job {job_id[:8]} already {job.status}, skipping", flush=True)
