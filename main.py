@@ -1173,31 +1173,56 @@ async def create_job(
         UserAPIKey.is_valid == True
     ).all()
     
-    user_gemini_keys = [k.key_value for k in user_keys] if user_keys else []
+    # --- Get user keys (UI first, then DB) ---
+    ui_gemini_keys = [k.strip() for k in (request.api_keys.gemini_keys if request.api_keys else []) if k and k.strip()]
+    db_gemini_keys = [k.key_value for k in user_keys] if user_keys else []
+    user_effective_keys = ui_gemini_keys or db_gemini_keys
     
-    # Check for available API keys (user's first, then server's)
-    if not user_gemini_keys and not api_keys_config.gemini_api_keys:
-        errors.append("No API keys available. Please add your own Gemini API keys in Settings, or contact administrator.")
+    # --- Decide backend BEFORE any fallback ---
+    from backends.selector import choose_backend_for_job, BackendType, is_flow_enabled
     
-    if errors:
-        raise HTTPException(
-            status_code=400,
-            detail={"errors": errors, "code": ErrorCode.INVALID_CONFIG.value}
-        )
+    backend = choose_backend_for_job(db, current_user.id, user_effective_keys)
+    print(f"[main.py] Backend selected: {backend.value} (user keys: {len(user_effective_keys)})", flush=True)
     
-    # Use user's keys if available, otherwise fall back to server keys
-    if user_gemini_keys:
-        print(f"[main.py] Using {len(user_gemini_keys)} user API keys for job", flush=True)
+    # --- Validate requirements based on backend ---
+    if backend == BackendType.API:
+        if not user_effective_keys:
+            errors.append("No user API keys provided. Add your Gemini keys in Settings.")
+        
+        if errors:
+            raise HTTPException(
+                status_code=400,
+                detail={"errors": errors, "code": ErrorCode.INVALID_CONFIG.value}
+            )
+        
         api_keys_data = {
-            "gemini_keys": user_gemini_keys,
-            "openai_key": api_keys_config.openai_api_key  # OpenAI is still server-side
+            "gemini_keys": user_effective_keys,             # ONLY user keys
+            "openai_key": api_keys_config.openai_api_key    # server-side ok
         }
-    else:
-        print(f"[main.py] Using server API keys for job", flush=True)
+        print(f"[main.py] API backend: using {len(user_effective_keys)} user keys", flush=True)
+    
+    elif backend == BackendType.FLOW:
+        if not is_flow_enabled():
+            errors.append("Flow backend is not configured/enabled on server.")
+            raise HTTPException(
+                status_code=500,
+                detail={"errors": errors, "code": ErrorCode.INVALID_CONFIG.value}
+            )
+        
+        # Clear any non-key-related errors for Flow
+        errors = [e for e in errors if "API key" not in e and "Gemini" not in e]
+        
+        if errors:
+            raise HTTPException(
+                status_code=400,
+                detail={"errors": errors, "code": ErrorCode.INVALID_CONFIG.value}
+            )
+        
         api_keys_data = {
-            "gemini_keys": api_keys_config.gemini_api_keys,
+            "gemini_keys": [],                              # Flow doesn't need Gemini keys
             "openai_key": api_keys_config.openai_api_key
         }
+        print(f"[main.py] FLOW backend: no Gemini keys needed", flush=True)
     
     # Create job record
     config_dict = config.model_dump()
@@ -1216,15 +1241,6 @@ async def create_job(
     # Log last frame index if set
     if request.last_frame_index is not None:
         print(f"[main.py] Last frame index: {request.last_frame_index}")
-    
-    # Determine backend based on user's API keys
-    from backends.selector import choose_backend_for_job, BackendType
-    
-    # Get user's API keys from the request
-    user_api_keys = api_keys_data.get("gemini_keys", []) if api_keys_data else []
-    backend = choose_backend_for_job(db, current_user.id, user_api_keys)
-    
-    print(f"[main.py] Backend selected: {backend.value} (user keys: {len(user_api_keys)})")
     
     job = Job(
         id=job_id,
