@@ -697,10 +697,9 @@ class FlowBackend:
         if not self._context:
             raise RuntimeError("Browser not started. Call start() first.")
         
-        # Navigate to Flow and wait for login
-        self._page.goto(FLOW_HOME_URL)
-        self._page.wait_for_load_state("networkidle")
-        time.sleep(2)
+        # Navigate to Flow and wait for login (with proxy-compatible timeout)
+        self._page.goto(FLOW_HOME_URL, timeout=60000, wait_until="load")
+        time.sleep(5)
         
         if not self._wait_for_login(timeout=300):
             print("[Flow] Failed to complete login for auth export", flush=True)
@@ -737,9 +736,12 @@ class FlowBackend:
         """
         print("[Flow] Creating new project...", flush=True)
         
-        self._page.goto(FLOW_HOME_URL)
-        self._page.wait_for_load_state("networkidle")
-        time.sleep(3)
+        # Navigate with longer timeout for proxy - use 'load' instead of 'networkidle'
+        self._page.goto(FLOW_HOME_URL, timeout=60000, wait_until="load")
+        
+        # Give the page time to initialize JavaScript
+        print("[Flow] Page loaded, waiting for JS initialization...", flush=True)
+        time.sleep(5)
         
         # Check for login
         if self._check_login_required():
@@ -748,21 +750,28 @@ class FlowBackend:
         
         self._check_and_dismiss_popup()
         
-        # Click "New project" button
-        with self._page.expect_navigation(wait_until="networkidle"):
-            self._page.locator("button:has-text('New project')").click(force=True)
-            print("[Flow] Clicked New project button", flush=True)
+        # Click "New project" button - use 'load' instead of 'networkidle' for proxy compatibility
+        # Also increase timeout for slow proxy connections
+        try:
+            with self._page.expect_navigation(wait_until="load", timeout=60000):
+                self._page.locator("button:has-text('New project')").click(force=True)
+                print("[Flow] Clicked New project button", flush=True)
+        except Exception as e:
+            # Navigation might not trigger if already on project page or SPA navigation
+            print(f"[Flow] Navigation wait completed or timed out: {e}", flush=True)
         
-        # Wait longer for project page to fully load
+        # Wait for page to stabilize (important for proxy connections)
         time.sleep(5)
         
         # Wait for the prompt input area to be ready - this indicates page is interactive
         print("[Flow] Waiting for project UI to be ready...", flush=True)
         try:
-            self._page.wait_for_selector("#PINHOLE_TEXT_AREA_ELEMENT_ID", timeout=15000)
+            self._page.wait_for_selector("#PINHOLE_TEXT_AREA_ELEMENT_ID", timeout=30000)
             print("[Flow] Prompt textarea found - page is ready", flush=True)
         except Exception as e:
             print(f"[Flow] Warning: Prompt textarea not found: {e}", flush=True)
+            # Take screenshot to debug
+            self._screenshot("project_not_ready")
         
         time.sleep(2)
         
@@ -1510,11 +1519,10 @@ class FlowBackend:
             True if downloaded successfully
         """
         try:
-            # Navigate to project
+            # Navigate to project with extended timeout for proxy
             print(f"[Flow] Navigating to project for download: {project_url}", flush=True)
-            self._page.goto(project_url)
-            self._page.wait_for_load_state("networkidle")
-            time.sleep(3)
+            self._page.goto(project_url, timeout=60000, wait_until="load")
+            time.sleep(5)  # Extra time for proxy
             
             if self._check_login_required():
                 if not self._wait_for_login():
@@ -1676,9 +1684,8 @@ class FlowBackend:
             # Create or navigate to project
             if job.project_url and "/project/" in job.project_url:
                 print(f"[Flow] Resuming project: {job.project_url}", flush=True)
-                self._page.goto(job.project_url)
-                self._page.wait_for_load_state("networkidle")
-                time.sleep(3)
+                self._page.goto(job.project_url, timeout=60000, wait_until="load")
+                time.sleep(5)  # Extra time for proxy
                 
                 if self._check_login_required():
                     if not self._wait_for_login():
