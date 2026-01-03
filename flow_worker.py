@@ -498,6 +498,7 @@ class FlowWorker:
         # Create FlowJob from database clips
         # Prompts are pre-generated at job creation time in main.py - no duplication needed!
         from pathlib import Path
+        from backends.flow_backend import clean_prompt_for_flow
         
         # Build clips data - prompts already stored in database
         clips_data = []
@@ -522,18 +523,25 @@ class FlowWorker:
                     end_frame = clip.end_frame
             
             # Use prompt from database (generated at job creation time in main.py)
-            prompt = clip.prompt_text if hasattr(clip, 'prompt_text') and clip.prompt_text else None
+            raw_prompt = clip.prompt_text if hasattr(clip, 'prompt_text') and clip.prompt_text else None
             
-            if prompt:
-                print(f"[FlowWorker] Clip {clip.clip_index}: Using pre-generated prompt ({len(prompt)} chars)", flush=True)
+            # Clean the prompt for Flow (remove === markers)
+            if raw_prompt:
+                cleaned_prompt = clean_prompt_for_flow(raw_prompt, clip.dialogue_text, language)
+                print(f"[FlowWorker] Clip {clip.clip_index}: Cleaned prompt ({len(cleaned_prompt)} chars)", flush=True)
+                
+                # Log the prompt to UI (truncated for readability)
+                prompt_preview = cleaned_prompt[:300] + "..." if len(cleaned_prompt) > 300 else cleaned_prompt
+                add_job_log(db, job.id, f"📝 Prompt for clip {clip.clip_index + 1}: {prompt_preview}", "INFO", "flow", clip.clip_index)
             else:
+                cleaned_prompt = None
                 print(f"[FlowWorker] Clip {clip.clip_index}: No pre-generated prompt, will use fallback", flush=True)
             
             clips_data.append({
                 "dialogue_text": clip.dialogue_text,
                 "start_frame": start_frame,
                 "end_frame": end_frame,
-                "prompt": prompt,  # Pre-generated prompt from database
+                "prompt": cleaned_prompt,  # Pre-generated and cleaned prompt
             })
         
         # Get existing project URL if resuming
