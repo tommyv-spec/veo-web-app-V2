@@ -21,7 +21,7 @@ import signal
 import traceback
 import tempfile
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 import threading
 
@@ -233,7 +233,7 @@ class FlowWorker:
                     if not success:
                         # Move to failed queue
                         job_data["error"] = error
-                        job_data["failed_at"] = datetime.utcnow().isoformat()
+                        job_data["failed_at"] = datetime.now(timezone.utc).isoformat()
                         self._redis.lpush(FLOW_QUEUE_FAILED, json.dumps(job_data))
                     
                     break
@@ -281,7 +281,7 @@ class FlowWorker:
                 
                 # Update job status
                 job.status = JobStatus.RUNNING.value
-                job.started_at = datetime.utcnow()
+                job.started_at = datetime.now(timezone.utc)
                 db.commit()
                 
                 add_job_log(db, job_id, "Flow worker started processing", "INFO", "flow")
@@ -339,7 +339,7 @@ class FlowWorker:
                 if success:
                     # Update job status
                     job.status = JobStatus.COMPLETED.value
-                    job.completed_at = datetime.utcnow()
+                    job.completed_at = datetime.now(timezone.utc)
                     update_job_progress(db, job_id)
                     db.commit()
                     
@@ -451,7 +451,7 @@ class FlowWorker:
         """
         from backends.flow_backend import FlowBackend, FlowJob, FlowClip, create_flow_job_from_db
         from backends.storage import is_storage_configured, get_storage
-        from models import add_job_log
+        from models import add_job_log, get_db, Clip
         
         # Create FlowJob from database clips
         clips_data = []
@@ -573,7 +573,7 @@ class FlowWorker:
                                     db_clip.output_url = output_key
                                 db_clip.output_filename = os.path.basename(flow_clip.output_url)
                                 db_clip.status = ClipStatus.COMPLETED.value
-                                db_clip.completed_at = datetime.utcnow()
+                                db_clip.completed_at = datetime.now(timezone.utc)
                 
                 db.commit()
             
@@ -610,7 +610,7 @@ def enqueue_flow_job(job_id: str, priority: int = 0) -> bool:
         job_data = {
             "job_id": job_id,
             "priority": priority,
-            "queued_at": datetime.utcnow().isoformat(),
+            "queued_at": datetime.now(timezone.utc).isoformat(),
         }
         
         redis_client.lpush(FLOW_QUEUE_NAME, json.dumps(job_data))
