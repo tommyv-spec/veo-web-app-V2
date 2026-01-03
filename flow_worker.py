@@ -549,33 +549,66 @@ class FlowWorker:
                     if hasattr(job, 'flow_state_json'):
                         job.flow_state_json = json.dumps(state)
                 
-                # Upload outputs to object storage
+                # Get storage if configured
+                storage = None
                 if is_storage_configured():
                     storage = get_storage()
+                
+                # Update ALL clips in database
+                for flow_clip in flow_job.clips:
+                    db_clip = db.query(Clip).filter(
+                        Clip.job_id == job.id,
+                        Clip.clip_index == flow_clip.clip_index
+                    ).first()
                     
-                    for flow_clip in flow_job.clips:
-                        if flow_clip.status == "completed" and flow_clip.output_url:
-                            # Upload to S3
-                            output_key = storage.upload_job_output(
-                                job.id,
-                                os.path.basename(flow_clip.output_url),
-                                flow_clip.output_url
-                            )
-                            
-                            # Update clip in database
-                            db_clip = db.query(Clip).filter(
-                                Clip.job_id == job.id,
-                                Clip.clip_index == flow_clip.clip_index
-                            ).first()
-                            
-                            if db_clip:
+                    if db_clip:
+                        print(f"[FlowWorker] Clip {flow_clip.clip_index}: status={flow_clip.status}, output={flow_clip.output_url}", flush=True)
+                        
+                        # Upload to storage if available and clip has output
+                        if storage and flow_clip.status == "completed" and flow_clip.output_url:
+                            try:
+                                output_key = storage.upload_job_output(
+                                    job.id,
+                                    os.path.basename(flow_clip.output_url),
+                                    flow_clip.output_url
+                                )
                                 if hasattr(db_clip, 'output_url'):
                                     db_clip.output_url = output_key
                                 db_clip.output_filename = os.path.basename(flow_clip.output_url)
-                                db_clip.status = ClipStatus.COMPLETED.value
-                                db_clip.completed_at = datetime.now(timezone.utc)
+                            except Exception as e:
+                                print(f"[FlowWorker] Error uploading clip {flow_clip.clip_index}: {e}", flush=True)
+                        
+                        # Always update clip status based on flow_clip status
+                        if flow_clip.status == "completed":
+                            db_clip.status = ClipStatus.COMPLETED.value
+                            db_clip.completed_at = datetime.now(timezone.utc)
+                        elif flow_clip.status == "generating":
+                            # Mark as completed anyway since flow.process_job returned success
+                            # This means generation was submitted but download may have failed
+                            db_clip.status = ClipStatus.COMPLETED.value
+                            db_clip.completed_at = datetime.now(timezone.utc)
+                            add_job_log(db, job.id, f"Clip {flow_clip.clip_index + 1} generated (download pending)", "INFO", "flow")
+                        elif flow_clip.status == "failed":
+                            db_clip.status = ClipStatus.FAILED.value
                 
                 db.commit()
+                
+                # Log summary with project URL
+                completed = sum(1 for c in flow_job.clips if c.status in ("completed", "generating"))
+                downloaded = sum(1 for c in flow_job.clips if c.status == "completed" and c.output_url)
+                
+                add_job_log(db, job.id, f"Flow processed {completed}/{len(flow_job.clips)} clips", "INFO", "flow")
+                
+                # If download failed, provide project URL for manual access
+                if flow_job.project_url:
+                    if downloaded < completed:
+                        add_job_log(
+                            db, job.id, 
+                            f"📎 Videos available at: {flow_job.project_url}", 
+                            "INFO", "flow"
+                        )
+                    else:
+                        add_job_log(db, job.id, f"✅ All clips downloaded successfully", "INFO", "flow")
             
             return success
     
