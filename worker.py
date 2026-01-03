@@ -293,14 +293,16 @@ class JobWorker:
         self.executor.submit(self._run_redo, job_id, clip_id)
     
     def _check_pending_jobs(self):
-        """Check for and start pending jobs"""
+        """Check for and start pending jobs (API backend only)"""
         if len(self.running_jobs) >= self.max_workers:
             return
         
         with get_db() as db:
-            # Get pending jobs
+            # Get pending jobs - only API backend (or legacy jobs without backend set)
+            from sqlalchemy import or_
             pending = db.query(Job).filter(
-                Job.status == JobStatus.PENDING.value
+                Job.status == JobStatus.PENDING.value,
+                or_(Job.backend == "api", Job.backend == None)  # Only API jobs
             ).order_by(Job.created_at.asc()).limit(
                 self.max_workers - len(self.running_jobs)
             ).all()
