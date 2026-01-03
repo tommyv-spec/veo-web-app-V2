@@ -376,7 +376,18 @@ class FlowBackend:
             self._page.locator("button:has-text('New project')").click(force=True)
             print("[Flow] Clicked New project button", flush=True)
         
-        time.sleep(3)
+        # Wait longer for project page to fully load
+        time.sleep(5)
+        
+        # Wait for the prompt input area to be ready - this indicates page is interactive
+        print("[Flow] Waiting for project UI to be ready...", flush=True)
+        try:
+            self._page.wait_for_selector("#PINHOLE_TEXT_AREA_ELEMENT_ID", timeout=15000)
+            print("[Flow] Prompt textarea found - page is ready", flush=True)
+        except Exception as e:
+            print(f"[Flow] Warning: Prompt textarea not found: {e}", flush=True)
+        
+        time.sleep(2)
         
         project_url = self._page.url
         print(f"[Flow] Created project: {project_url}", flush=True)
@@ -386,6 +397,13 @@ class FlowBackend:
             print("[Flow] Warning: Project URL may be invalid, waiting more...", flush=True)
             time.sleep(5)
             project_url = self._page.url
+        
+        # Take screenshot to verify project is ready
+        try:
+            self._page.screenshot(path="/tmp/flow_project_created.png")
+            print("[Flow] Screenshot saved: /tmp/flow_project_created.png", flush=True)
+        except Exception:
+            pass
         
         return project_url
     
@@ -703,42 +721,98 @@ class FlowBackend:
                 # First clip setup
                 print(f"[Flow] Setting up first clip with frames...", flush=True)
                 
-                # Select Frames to Video mode
+                # Take screenshot before mode selection
+                try:
+                    self._page.screenshot(path="/tmp/flow_before_mode_select.png")
+                except Exception:
+                    pass
+                
+                # Select Frames to Video mode - with retries
                 print("[Flow] Selecting 'Frames to Video' mode...", flush=True)
                 
-                # Click the mode dropdown (shows "Text to Video" by default)
-                mode_dropdown = self._page.locator("text=Text to Video").first
-                if mode_dropdown.count() > 0:
-                    mode_dropdown.click()
-                    print("[Flow] Opened mode dropdown", flush=True)
-                    time.sleep(1)
+                mode_changed = False
+                for attempt in range(3):
+                    print(f"[Flow] Mode selection attempt {attempt + 1}/3", flush=True)
+                    
+                    # Look for the mode dropdown button
+                    # The dropdown shows current mode (e.g., "Text to Video")
+                    mode_button = None
+                    for selector in [
+                        "text=Text to Video",
+                        "button:has-text('Text to Video')",
+                        "[aria-haspopup='listbox']",
+                        "div:has-text('Text to Video') >> button",
+                    ]:
+                        try:
+                            btn = self._page.locator(selector).first
+                            if btn.count() > 0 and btn.is_visible():
+                                mode_button = btn
+                                print(f"[Flow] Found mode dropdown with selector: {selector}", flush=True)
+                                break
+                        except Exception:
+                            pass
+                    
+                    if not mode_button:
+                        print("[Flow] Mode dropdown not found, trying to locate any dropdown...", flush=True)
+                        # Try clicking on the area where the dropdown usually is
+                        try:
+                            self._page.screenshot(path=f"/tmp/flow_no_dropdown_attempt_{attempt}.png")
+                        except Exception:
+                            pass
+                        time.sleep(2)
+                        continue
+                    
+                    # Click to open the dropdown
+                    mode_button.click()
+                    print("[Flow] Clicked mode dropdown", flush=True)
+                    time.sleep(1.5)  # Wait for dropdown animation
+                    
+                    # Wait for dropdown options to appear
+                    try:
+                        self._page.wait_for_selector("text=Frames to Video", timeout=5000)
+                        print("[Flow] Dropdown options visible", flush=True)
+                    except Exception:
+                        print("[Flow] Dropdown options not visible, retrying...", flush=True)
+                        self._page.keyboard.press("Escape")  # Close dropdown if stuck
+                        time.sleep(1)
+                        continue
                     
                     # Click "Frames to Video" option
                     frames_option = self._page.locator("text=Frames to Video").first
                     if frames_option.count() > 0:
-                        frames_option.click()
-                        print("[Flow] Selected Frames to Video", flush=True)
-                        time.sleep(2)
+                        try:
+                            frames_option.click()
+                            print("[Flow] Clicked 'Frames to Video' option", flush=True)
+                            time.sleep(2)
+                        except Exception as e:
+                            print(f"[Flow] Click failed: {e}, trying JavaScript click...", flush=True)
+                            try:
+                                frames_option.evaluate("el => el.click()")
+                            except Exception:
+                                pass
+                            time.sleep(2)
+                    
+                    # Verify mode changed by checking for frame upload buttons
+                    time.sleep(1)
+                    frame_buttons = self._page.locator("button.sc-d02e9a37-1.hvUQuN")
+                    if frame_buttons.count() > 0:
+                        print(f"[Flow] SUCCESS: Mode changed! Found {frame_buttons.count()} frame button(s)", flush=True)
+                        mode_changed = True
+                        break
                     else:
-                        print("[Flow] WARNING: 'Frames to Video' option not found!", flush=True)
-                else:
-                    # Maybe already in Frames to Video mode?
-                    if self._page.locator("text=Frames to Video").count() > 0:
-                        print("[Flow] Already in Frames to Video mode", flush=True)
-                    else:
-                        print("[Flow] WARNING: Mode dropdown not found!", flush=True)
+                        print("[Flow] Frame buttons not found, mode may not have changed", flush=True)
+                        # Take debug screenshot
+                        try:
+                            self._page.screenshot(path=f"/tmp/flow_mode_attempt_{attempt}.png")
+                        except Exception:
+                            pass
+                
+                if not mode_changed:
+                    print("[Flow] ERROR: Failed to switch to 'Frames to Video' mode after 3 attempts!", flush=True)
+                    self._page.screenshot(path="/tmp/flow_mode_failed.png")
+                    raise RuntimeError("Could not switch to Frames to Video mode")
                 
                 self._check_and_dismiss_popup()
-                
-                # Verify we're in Frames to Video mode by checking for frame upload buttons
-                time.sleep(1)
-                frame_buttons = self._page.locator("button.sc-d02e9a37-1.hvUQuN")
-                if frame_buttons.count() == 0:
-                    print("[Flow] WARNING: Frame upload buttons not visible - mode may not be correct!", flush=True)
-                    # Take screenshot for debugging
-                    self._page.screenshot(path="/tmp/flow_mode_error.png")
-                else:
-                    print(f"[Flow] Found {frame_buttons.count()} frame upload button(s)", flush=True)
                 
                 # Upload START frame
                 if clip.start_frame_path:
