@@ -452,8 +452,13 @@ class FlowWorker:
                         # Fallback to first image for all clips (single image mode)
                         clip.start_frame = available_images[0]
                         print(f"[FlowWorker] Assigned first image to clip {clip.clip_index}: {os.path.basename(available_images[0])}", flush=True)
-        else:
+        
+        # Check if any clips have frames assigned (from S3 or local)
+        clips_with_frames = sum(1 for c in clips if c.start_frame)
+        if clips_with_frames == 0:
             print(f"[FlowWorker] WARNING: No images found for job!", flush=True)
+        else:
+            print(f"[FlowWorker] {clips_with_frames}/{len(clips)} clips have frames assigned", flush=True)
         
         return frames_dir
     
@@ -543,12 +548,37 @@ class FlowWorker:
         
         flow_job.on_progress = on_progress
         
-        # Run automation
-        with FlowBackend(
-            headless=True,
-            download_dir=self._download_dir,
-            temp_dir=self._temp_dir
-        ) as flow:
+        # Log memory usage before starting browser
+        try:
+            import psutil
+            process = psutil.Process()
+            mem_info = process.memory_info()
+            print(f"[FlowWorker] Memory before browser: {mem_info.rss / 1024 / 1024:.1f} MB", flush=True)
+        except Exception:
+            pass
+        
+        # Run automation with explicit error handling
+        flow = None
+        try:
+            print("[FlowWorker] Creating FlowBackend instance...", flush=True)
+            flow = FlowBackend(
+                headless=True,
+                download_dir=self._download_dir,
+                temp_dir=self._temp_dir
+            )
+            
+            print("[FlowWorker] Starting browser...", flush=True)
+            flow.start()
+            
+            # Log memory after browser start
+            try:
+                import psutil
+                process = psutil.Process()
+                mem_info = process.memory_info()
+                print(f"[FlowWorker] Memory after browser start: {mem_info.rss / 1024 / 1024:.1f} MB", flush=True)
+            except Exception:
+                pass
+            
             # Check if auth is valid
             if flow.needs_auth:
                 # Mark job as needing auth
@@ -561,6 +591,7 @@ class FlowWorker:
                 return False
             
             # Process the job
+            print("[FlowWorker] Starting job processing...", flush=True)
             success = flow.process_job(
                 flow_job,
                 language=language,
@@ -640,6 +671,20 @@ class FlowWorker:
                         add_job_log(db, job.id, f"✅ All clips downloaded successfully", "INFO", "flow")
             
             return success
+            
+        except Exception as e:
+            print(f"[FlowWorker] Error in flow automation: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            raise
+        finally:
+            # Always clean up the browser
+            if flow:
+                try:
+                    print("[FlowWorker] Stopping browser...", flush=True)
+                    flow.stop()
+                except Exception as e:
+                    print(f"[FlowWorker] Error stopping browser: {e}", flush=True)
     
     def _send_auth_alert(self, job_id: str):
         """Send alert that auth is needed"""
