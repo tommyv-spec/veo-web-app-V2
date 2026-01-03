@@ -300,12 +300,22 @@ class JobWorker:
         with get_db() as db:
             # Get pending jobs - only API backend (or legacy jobs without backend set)
             from sqlalchemy import or_
+            
+            # DEBUG: First check all pending jobs
+            all_pending = db.query(Job).filter(Job.status == JobStatus.PENDING.value).all()
+            for j in all_pending:
+                backend_val = getattr(j, 'backend', 'NO_ATTR')
+                print(f"[Worker] DEBUG: Pending job {j.id[:8]} backend={backend_val}", flush=True)
+            
+            # Now filter for API jobs only
             pending = db.query(Job).filter(
                 Job.status == JobStatus.PENDING.value,
                 or_(Job.backend == "api", Job.backend == None)  # Only API jobs
             ).order_by(Job.created_at.asc()).limit(
                 self.max_workers - len(self.running_jobs)
             ).all()
+            
+            print(f"[Worker] Found {len(pending)} API jobs to process (filtered from {len(all_pending)} total pending)", flush=True)
             
             for job in pending:
                 if job.id not in self.running_jobs:
@@ -315,6 +325,16 @@ class JobWorker:
         """Start processing a job"""
         if self.executor is None:
             return
+        
+        # Double-check backend before starting
+        with get_db() as db:
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if job:
+                backend = getattr(job, 'backend', None)
+                if backend == 'flow':
+                    print(f"[Worker] BLOCKED: Job {job_id[:8]} is Flow backend - NOT starting", flush=True)
+                    return
+                print(f"[Worker] Starting job {job_id[:8]} (backend={backend})", flush=True)
         
         # Add to running_jobs IMMEDIATELY to prevent race condition
         # Use a placeholder until the real generator is created
