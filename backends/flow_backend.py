@@ -28,6 +28,13 @@ try:
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
 
+# Try to import playwright-stealth for better anti-detection
+try:
+    from playwright_stealth import stealth_sync
+    STEALTH_AVAILABLE = True
+except ImportError:
+    STEALTH_AVAILABLE = False
+
 
 # Configuration
 FLOW_HOME_URL = "https://labs.google/fx/tools/flow"
@@ -143,20 +150,27 @@ class FlowBackend:
         temp_dir: Optional[str] = None,
         proxy_server: Optional[str] = None,
         proxy_username: Optional[str] = None,
-        proxy_password: Optional[str] = None
+        proxy_password: Optional[str] = None,
+        browser_type: str = "chromium"  # "chromium" or "firefox"
     ):
         """
         Initialize Flow backend.
         
         Args:
-            storage_state_path: Local path to Playwright storage state JSON
-            storage_state_url: S3 URL/key to download storage state from
+            storage_state_path: Local path to browser session folder (user_data_dir)
+                              OR path to Playwright storage state JSON (legacy)
+            storage_state_url: Not used - session is downloaded from R2 at auth/flow_session.zip
             headless: Whether to run browser headlessly
             download_dir: Directory for downloads
             temp_dir: Directory for temporary files
-            proxy_server: Proxy server URL (e.g., "http://proxy.example.com:8080")
-            proxy_username: Proxy username (optional)
-            proxy_password: Proxy password (optional)
+            proxy_server: Not used in persistent context mode
+            proxy_username: Not used in persistent context mode
+            proxy_password: Not used in persistent context mode
+            browser_type: Not used - always uses Chromium for persistent context
+        
+        Note: This backend uses launch_persistent_context with a real Chrome profile
+        for better compatibility. Upload your working flow_session folder to R2
+        at auth/flow_session.zip using the upload_session.py script.
         """
         if not PLAYWRIGHT_AVAILABLE:
             raise ImportError(
@@ -175,6 +189,9 @@ class FlowBackend:
         self.proxy_username = proxy_username or os.environ.get("FLOW_PROXY_USERNAME")
         self.proxy_password = proxy_password or os.environ.get("FLOW_PROXY_PASSWORD")
         
+        # Browser type - chromium or firefox
+        self.browser_type = browser_type or os.environ.get("FLOW_BROWSER_TYPE", "chromium")
+        
         self._playwright = None
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
@@ -182,6 +199,10 @@ class FlowBackend:
         
         self._needs_auth = False
         self._cancelled = False
+        
+        # Use persistent context for more realistic browser behavior
+        self._use_persistent_context = True
+        self._user_data_dir = tempfile.mkdtemp(prefix="flow_browser_")
     
     def __enter__(self):
         self.start()
@@ -190,206 +211,105 @@ class FlowBackend:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.stop()
     
+    def _download_session_from_r2(self) -> Optional[str]:
+        """Download and extract browser session from R2."""
+        try:
+            from .storage import is_storage_configured, get_storage
+            
+            if not is_storage_configured():
+                print("[Flow] Storage not configured, cannot download session", flush=True)
+                return None
+            
+            storage = get_storage()
+            
+            # Check if session exists in R2
+            session_key = "auth/flow_session.zip"
+            if not storage.exists(session_key):
+                print(f"[Flow] Session not found in R2: {session_key}", flush=True)
+                return None
+            
+            # Download zip file
+            zip_path = os.path.join(self.temp_dir, "flow_session.zip")
+            print(f"[Flow] Downloading session from R2: {session_key}", flush=True)
+            storage.download_file(session_key, zip_path)
+            
+            # Extract to session directory
+            import zipfile
+            session_dir = os.path.join(self.temp_dir, "flow_session")
+            print(f"[Flow] Extracting session to: {session_dir}", flush=True)
+            
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(session_dir)
+            
+            # Clean up zip
+            os.remove(zip_path)
+            
+            print(f"[Flow] ✓ Session extracted successfully", flush=True)
+            return session_dir
+            
+        except Exception as e:
+            print(f"[Flow] Failed to download session from R2: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            return None
+    
     def start(self):
-        """Start the browser with stealth measures and optional proxy"""
-        print("[Flow] Starting browser with stealth mode...", flush=True)
+        """Start the browser with persistent context (like working local script)"""
+        print("[Flow] Starting browser with persistent context...", flush=True)
         
-        # Log proxy status
-        if self.proxy_server:
-            masked_proxy = self.proxy_server
-            if '@' in masked_proxy:
-                masked_proxy = masked_proxy.split('@')[-1]
-            print(f"[Flow] Using proxy: {masked_proxy}", flush=True)
+        # Get session directory
+        session_dir = None
+        
+        # Option 1: Use local path if provided and exists
+        if self.storage_state_path and os.path.isdir(self.storage_state_path):
+            session_dir = self.storage_state_path
+            print(f"[Flow] Using local session: {session_dir}", flush=True)
         else:
-            print("[Flow] No proxy configured (using direct connection)", flush=True)
+            # Option 2: Download from R2
+            session_dir = self._download_session_from_r2()
         
+        if not session_dir:
+            # Option 3: Create empty session directory (will need manual login)
+            session_dir = os.path.join(self.temp_dir, "flow_session")
+            os.makedirs(session_dir, exist_ok=True)
+            print(f"[Flow] Created empty session: {session_dir}", flush=True)
+            print("[Flow] WARNING: No existing session - may need manual login", flush=True)
+        
+        self._user_data_dir = session_dir
         self._playwright = sync_playwright().start()
         
-        # Comprehensive stealth browser args
-        stealth_args = [
+        # Use EXACTLY the same args as the working script
+        browser_args = [
             "--disable-blink-features=AutomationControlled",
+            "--window-size=1280,720",
             "--no-sandbox",
-            "--disable-setuid-sandbox",
+            "--disable-setuid-sandbox", 
             "--disable-dev-shm-usage",
-            "--disable-accelerated-2d-canvas",
-            "--no-first-run",
-            "--no-zygote",
-            "--disable-infobars",
-            "--disable-extensions",
-            "--disable-plugins-discovery",
-            "--disable-default-apps",
-            "--disable-component-update",
-            "--disable-background-networking",
-            "--disable-sync",
-            "--disable-translate",
-            "--hide-scrollbars",
-            "--mute-audio",
-            "--window-size=1920,1080",
-            "--start-maximized",
-            "--enable-webgl",
-            "--use-gl=swiftshader",
         ]
         
-        # Add SSL bypass flags if using proxy
-        if self.proxy_server:
-            stealth_args.extend([
-                "--ignore-certificate-errors",
-                "--ignore-ssl-errors",
-                "--ignore-certificate-errors-spki-list",
-                "--allow-insecure-localhost",
-            ])
-            print("[Flow] Added SSL bypass flags for proxy", flush=True)
+        # Launch with persistent context - THIS IS THE KEY DIFFERENCE
+        print(f"[Flow] Launching persistent context from: {session_dir}", flush=True)
         
-        # Build launch options
-        launch_options = {
-            "headless": self.headless,
-            "args": stealth_args
-        }
+        self._context = self._playwright.chromium.launch_persistent_context(
+            user_data_dir=session_dir,
+            headless=self.headless,
+            slow_mo=200 if not self.headless else 50,  # Slow down like working script
+            viewport={"width": 1280, "height": 720},
+            args=browser_args,
+            ignore_default_args=["--enable-automation"],  # Critical!
+            accept_downloads=True
+        )
         
-        # Add proxy if configured
-        if self.proxy_server:
-            proxy_config = {"server": self.proxy_server}
-            if self.proxy_username and self.proxy_password:
-                proxy_config["username"] = self.proxy_username
-                proxy_config["password"] = self.proxy_password
-            launch_options["proxy"] = proxy_config
-            print(f"[Flow] Proxy configured: {self.proxy_server}", flush=True)
+        self._page = self._context.pages[0]
         
-        self._browser = self._playwright.chromium.launch(**launch_options)
-        
-        # Get storage state
-        storage_state = self._get_storage_state()
-        
-        # Create context with settings that match OctoBrowser fingerprint
-        # OctoBrowser typically uses realistic Windows Chrome fingerprints
-        context_options = {
-            "accept_downloads": True,
-            "viewport": {"width": 1920, "height": 1080},
-            "screen": {"width": 1920, "height": 1080},
-            # Use a recent Chrome user agent - should match OctoBrowser's setting
-            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            "locale": "en-US",
-            # Use a European timezone to match your location
-            "timezone_id": "Europe/Rome",
-            "color_scheme": "light",  # Most users use light mode
-            "has_touch": False,
-            "is_mobile": False,
-            "device_scale_factor": 1,
-            "java_script_enabled": True,
-            "bypass_csp": False,
-            "extra_http_headers": {
-                "Accept-Language": "en-US,en;q=0.9,it;q=0.8",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Sec-Ch-Ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-                "Sec-Ch-Ua-Mobile": "?0",
-                "Sec-Ch-Ua-Platform": '"Windows"',
-            },
-            "permissions": ["geolocation"],
-        }
-        
-        # Ignore HTTPS errors when using proxy
-        if self.proxy_server:
-            context_options["ignore_https_errors"] = True
-            print("[Flow] SSL certificate validation disabled (proxy mode)", flush=True)
-        
-        if storage_state:
-            context_options["storage_state"] = storage_state
-        
-        self._context = self._browser.new_context(**context_options)
-        self._page = self._context.new_page()
-        
-        # Comprehensive anti-detection scripts - match OctoBrowser fingerprint
+        # Add anti-detection script - SAME as working script
         self._page.add_init_script("""
-            // Remove webdriver flag
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            
-            // Add chrome runtime (like real Chrome)
-            window.chrome = { 
-                runtime: {
-                    connect: function() {},
-                    sendMessage: function() {},
-                    onMessage: { addListener: function() {} }
-                }, 
-                loadTimes: function() { return {}; }, 
-                csi: function() { return {}; }, 
-                app: {
-                    isInstalled: false,
-                    InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
-                    RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' }
-                }
-            };
-            
-            // Fix permissions
-            const originalQuery = window.navigator.permissions.query;
-            window.navigator.permissions.query = (parameters) => (
-                parameters.name === 'notifications' ?
-                    Promise.resolve({ state: Notification.permission }) :
-                    originalQuery(parameters)
-            );
-            
-            // Fix plugins (match real Chrome)
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => {
-                    const plugins = [
-                        { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
-                        { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
-                        { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' }
-                    ];
-                    plugins.length = 3;
-                    return plugins;
-                }
-            });
-            
-            // Fix languages
-            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en', 'it'] });
-            
-            // Fix platform
-            Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
-            
-            // Fix hardware (realistic values)
-            Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
-            Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
-            
-            // Fix maxTouchPoints (desktop = 0)
-            Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 0 });
-            
-            // Fix connection info
-            if (navigator.connection) {
-                Object.defineProperty(navigator.connection, 'rtt', { get: () => 50 });
-            }
-            
-            // Fix WebGL vendor/renderer (important for fingerprinting)
-            const getParameterOriginal = WebGLRenderingContext.prototype.getParameter;
-            WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                if (parameter === 37445) return 'Google Inc. (Intel)';  // UNMASKED_VENDOR_WEBGL
-                if (parameter === 37446) return 'ANGLE (Intel, Intel(R) UHD Graphics 630, OpenGL 4.1)';  // UNMASKED_RENDERER_WEBGL
-                return getParameterOriginal.call(this, parameter);
-            };
-            
-            // Fix canvas fingerprint (add slight noise)
-            const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
-            HTMLCanvasElement.prototype.toDataURL = function(type) {
-                if (type === 'image/png' && this.width > 16 && this.height > 16) {
-                    const ctx = this.getContext('2d');
-                    if (ctx) {
-                        const imageData = ctx.getImageData(0, 0, 1, 1);
-                        imageData.data[0] = imageData.data[0] ^ 1;  // Tiny modification
-                        ctx.putImageData(imageData, 0, 0);
-                    }
-                }
-                return originalToDataURL.apply(this, arguments);
-            };
-            
-            // Remove automation artifacts
-            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
-            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
-            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
-            delete window.__playwright__;
-            delete window.__pw_manual;
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            window.chrome = { runtime: {} };
         """)
         
-        print("[Flow] Browser started with stealth mode", flush=True)
+        print("[Flow] ✓ Browser started with persistent context", flush=True)
+        print(f"[Flow] Session directory: {session_dir}", flush=True)
     
     def _human_delay(self, min_ms: int = 500, max_ms: int = 1500):
         """Add a random human-like delay"""
@@ -450,13 +370,10 @@ class FlowBackend:
         """Stop the browser"""
         print("[Flow] Stopping browser...", flush=True)
         
+        # With persistent context, we only close the context (no separate browser)
         if self._context:
             self._context.close()
             self._context = None
-        
-        if self._browser:
-            self._browser.close()
-            self._browser = None
         
         if self._playwright:
             self._playwright.stop()
