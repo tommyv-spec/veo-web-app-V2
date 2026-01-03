@@ -31,8 +31,8 @@ except ImportError:
 
 # Configuration
 FLOW_HOME_URL = "https://labs.google/fx/tools/flow"
-GENERATION_TIMEOUT = 120  # Seconds to wait for generation
-DEFAULT_WAIT_AFTER_SUBMIT = 90  # Seconds to wait before attempting download
+GENERATION_TIMEOUT = 180  # Seconds to wait for generation
+DEFAULT_WAIT_AFTER_SUBMIT = 120  # Seconds to wait before attempting download
 
 
 @dataclass
@@ -599,11 +599,9 @@ class FlowBackend:
         Returns:
             True if downloaded successfully
         """
-        # This method would be called after generation is complete
-        # Implementation follows the download logic from test_for_jobs2.py
-        
         try:
             # Navigate to project
+            print(f"[Flow] Navigating to project for download: {project_url}", flush=True)
             self._page.goto(project_url)
             self._page.wait_for_load_state("networkidle")
             time.sleep(3)
@@ -615,62 +613,137 @@ class FlowBackend:
             self._check_and_dismiss_popup()
             time.sleep(2)
             
-            # Wait for clips to appear
+            # Wait for clips to appear - look for various possible selectors
             print("[Flow] Waiting for clips to load...", flush=True)
-            for _ in range(30):
+            video_found = False
+            
+            for attempt in range(60):  # Wait up to 60 seconds
+                # Try multiple selectors for video elements
                 video_count = self._page.locator("video").count()
+                
+                # Also check for generation-in-progress indicators
+                generating = self._page.locator("text=Generating").count()
+                queued = self._page.locator("text=Queued").count()
+                
                 if video_count > 0:
                     print(f"[Flow] Found {video_count} video element(s)", flush=True)
+                    video_found = True
                     break
+                
+                if attempt % 10 == 0:
+                    print(f"[Flow] Still waiting... videos={video_count}, generating={generating}, queued={queued}", flush=True)
+                    
+                    # Debug: log what's visible on the page
+                    if attempt == 30:
+                        try:
+                            # Take screenshot for debugging
+                            screenshot_path = os.path.join(self.download_dir, f"debug_clip_{clip.clip_index}.png")
+                            self._page.screenshot(path=screenshot_path)
+                            print(f"[Flow] Debug screenshot saved: {screenshot_path}", flush=True)
+                        except Exception:
+                            pass
+                
                 time.sleep(1)
             
-            # Find the correct clip by matching dialogue
-            # This is a simplified version - full implementation would iterate through data-index elements
+            if not video_found:
+                print(f"[Flow] No video elements found after 60s wait", flush=True)
+                # Mark as "generating" - the video may still be processing
+                clip.status = "generating"
+                clip.error_message = "Video still generating - check project URL manually"
+                return False
             
-            # For now, download the first available video
+            # Try multiple approaches to find the clip
+            downloaded = False
+            
+            # Approach 1: Look for data-index container
             container = self._page.locator("div[data-index='0']")
             if container.count() > 0:
-                clip_section = container.locator("div.sc-d90fd836-2.dLxTam")
+                print("[Flow] Found data-index container", flush=True)
                 
-                if clip_section.count() > 0:
-                    container.scroll_into_view_if_needed()
-                    time.sleep(1)
-                    
-                    video = container.locator("video").first
-                    video.hover(force=True)
-                    time.sleep(1)
-                    
-                    src = video.get_attribute("src")
-                    video_id = get_video_id(src) or f"clip_{clip.clip_index}"
-                    clip.flow_clip_id = video_id
-                    
-                    # Click download button
-                    download_btn = container.locator("i:text('download')").first
-                    download_btn.click(force=True)
-                    time.sleep(1)
-                    
-                    # Start download
-                    with self._page.expect_download() as download_info:
-                        self._page.click("text=Original size (720p)")
-                    
-                    download = download_info.value
-                    save_path = os.path.join(
-                        self.download_dir,
-                        f"clip_{clip.clip_index + 1}_{video_id}.mp4"
-                    )
-                    download.save_as(save_path)
-                    
-                    print(f"[Flow] Downloaded: {save_path}", flush=True)
-                    clip.status = "completed"
-                    clip.output_url = save_path
-                    return True
+                # Try to find video within container
+                video = container.locator("video").first
+                if video.count() > 0:
+                    try:
+                        video.scroll_into_view_if_needed()
+                        time.sleep(1)
+                        video.hover(force=True)
+                        time.sleep(1)
+                        
+                        src = video.get_attribute("src")
+                        video_id = get_video_id(src) or f"clip_{clip.clip_index}"
+                        clip.flow_clip_id = video_id
+                        print(f"[Flow] Video ID: {video_id}", flush=True)
+                        
+                        # Look for download button with various selectors
+                        download_btn = None
+                        for selector in [
+                            "i:text('download')",
+                            "[aria-label='Download']",
+                            "button:has-text('download')",
+                            ".download-button",
+                            "i.material-icons:text('download')"
+                        ]:
+                            btn = container.locator(selector).first
+                            if btn.count() > 0:
+                                download_btn = btn
+                                print(f"[Flow] Found download button with selector: {selector}", flush=True)
+                                break
+                        
+                        if download_btn:
+                            download_btn.click(force=True)
+                            time.sleep(2)
+                            
+                            # Try to click download option
+                            for option_text in ["Original size (720p)", "720p", "Download", "Original"]:
+                                option = self._page.locator(f"text={option_text}").first
+                                if option.count() > 0 and option.is_visible():
+                                    try:
+                                        with self._page.expect_download(timeout=30000) as download_info:
+                                            option.click()
+                                        
+                                        download = download_info.value
+                                        save_path = os.path.join(
+                                            self.download_dir,
+                                            f"clip_{clip.clip_index + 1}_{video_id}.mp4"
+                                        )
+                                        download.save_as(save_path)
+                                        
+                                        print(f"[Flow] Downloaded: {save_path}", flush=True)
+                                        clip.status = "completed"
+                                        clip.output_url = save_path
+                                        downloaded = True
+                                        break
+                                    except Exception as e:
+                                        print(f"[Flow] Download attempt failed: {e}", flush=True)
+                        else:
+                            print("[Flow] Could not find download button", flush=True)
+                            
+                    except Exception as e:
+                        print(f"[Flow] Error interacting with video: {e}", flush=True)
             
-            print(f"[Flow] Could not find clip {clip.clip_index + 1} for download", flush=True)
+            # Approach 2: If data-index failed, try finding any video on page
+            if not downloaded:
+                print("[Flow] Trying alternative video detection...", flush=True)
+                all_videos = self._page.locator("video")
+                if all_videos.count() > 0:
+                    print(f"[Flow] Found {all_videos.count()} videos on page", flush=True)
+                    
+                    # Video exists but we couldn't download - mark as partially complete
+                    clip.status = "generating"  # Will be marked completed by flow_worker
+                    clip.error_message = "Video generated but download failed - check project URL"
+                    return False
+            
+            if downloaded:
+                return True
+            
+            print(f"[Flow] Could not download clip {clip.clip_index + 1}", flush=True)
+            clip.status = "generating"  # Still mark as generating since submission worked
             return False
             
         except Exception as e:
             print(f"[Flow] Error downloading clip {clip.clip_index + 1}: {e}", flush=True)
             clip.error_message = str(e)
+            clip.status = "generating"  # Submission worked, download failed
             return False
     
     def process_job(
