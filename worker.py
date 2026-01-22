@@ -643,29 +643,9 @@ class JobWorker:
                     return
                 
                 if not images_dir.exists():
-                    needs_r2_recovery = True
-                    r2_recovery_reason = "directory does not exist"
-                else:
-                    # Directory exists, but check if it has any image files
-                    # On Render, the directory might exist but be empty after restart
-                    try:
-                        SUPPORTED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
-                        existing_images = [f for f in images_dir.iterdir() if f.suffix.lower() in SUPPORTED_EXTENSIONS]
-                        if not existing_images:
-                            needs_r2_recovery = True
-                            r2_recovery_reason = "directory exists but has no image files"
-                        else:
-                            needs_r2_recovery = False
-                    except Exception as e:
-                        needs_r2_recovery = True
-                        r2_recovery_reason = f"error checking directory: {e}"
-                
-                if needs_r2_recovery:
-                    # Local files missing - try to recover from R2 storage into a safe redo_cache folder
-                    print(f"[Worker {WORKER_VERSION}] R2 recovery needed: {r2_recovery_reason}", flush=True)
-                    add_job_log(db, job_id, f"[Redo] R2 recovery needed: {r2_recovery_reason}", "DEBUG", "redo")
+                    # Local files missing - try to recover from R2 storage (same as first generation)
+                    print(f"[Worker {WORKER_VERSION}] Local images_dir missing, attempting R2 recovery...", flush=True)
                     
-                    # Check if frames are stored in R2
                     frames_r2_keys = None
                     if job.frames_storage_keys:
                         try:
@@ -674,71 +654,41 @@ class JobWorker:
                             pass
                     
                     if frames_r2_keys:
-                        # Try to download frames from R2 into a safe redo_cache directory
                         try:
                             from backends.storage import is_storage_configured, get_storage
                             if is_storage_configured():
                                 storage = get_storage()
                                 
-                                # Create redo_cache directory (safe location for recovered frames)
-                                from config import app_config
-                                redo_cache_dir = app_config.uploads_dir / "redo_cache" / job_id
-                                redo_cache_dir.mkdir(parents=True, exist_ok=True)
+                                # Create local directory
+                                images_dir.mkdir(parents=True, exist_ok=True)
                                 
-                                # Download all frames to redo_cache
+                                # Download all frames
                                 downloaded_count = 0
                                 for filename, r2_key in frames_r2_keys.items():
                                     try:
-                                        local_path = redo_cache_dir / filename
+                                        local_path = images_dir / filename
                                         storage.download_file(r2_key, local_path)
                                         downloaded_count += 1
                                     except Exception as e:
                                         print(f"[Worker] Failed to download {filename}: {e}", flush=True)
                                 
                                 if downloaded_count > 0:
-                                    # Update images_dir to point to redo_cache
-                                    images_dir = redo_cache_dir
-                                    job.images_dir = str(redo_cache_dir)
-                                    db.commit()
-                                    
-                                    # Verify images exist - just check directory contents
-                                    # Don't use list_images() here as we don't have config yet
-                                    recovered_files = list(redo_cache_dir.iterdir())
-                                    if not recovered_files:
-                                        raise Exception("Recovered frames but directory is empty")
-                                    
-                                    print(f"[Worker {WORKER_VERSION}] Recovered {downloaded_count} frames to redo_cache for job {job_id[:8]}", flush=True)
-                                    add_job_log(
-                                        db, job_id,
-                                        f"✓ Recovered {downloaded_count} frames from cloud storage for redo (using redo_cache)",
-                                        "INFO", "redo"
-                                    )
+                                    print(f"[Worker {WORKER_VERSION}] Recovered {downloaded_count} frames from R2", flush=True)
+                                    add_job_log(db, job_id, f"✓ Recovered {downloaded_count} frames from cloud storage", "INFO", "redo")
                                     db.commit()
                                 else:
-                                    raise Exception("No frames could be downloaded from R2")
+                                    raise ValueError(f"No frames could be downloaded from R2 storage")
                             else:
-                                raise Exception("R2 storage not configured")
+                                raise ValueError(f"R2 storage not configured")
                         except Exception as e:
-                            print(f"[Worker {WORKER_VERSION}] Failed to recover frames from R2: {e}", flush=True)
-                            add_job_log(
-                                db, job_id,
-                                f"⚠️ Redo failed: Could not recover images from cloud storage ({e}). Please create a new job.",
-                                "ERROR", "redo"
-                            )
+                            add_job_log(db, job_id, f"⚠️ Redo failed: R2 recovery failed ({e})", "ERROR", "redo")
                             clip.status = ClipStatus.FAILED.value
-                            clip.error_code = "FILE_NOT_FOUND"
-                            clip.error_message = f"Redo failed: could not recover frames from storage ({e})"
+                            clip.error_message = f"Could not recover frames: {e}"
                             db.commit()
                             return
                     else:
-                        # No R2 keys stored - permanent failure
-                        add_job_log(
-                            db, job_id,
-                            f"⚠️ Redo failed: Original images no longer available (no cloud backup). Please create a new job.",
-                            "ERROR", "redo"
-                        )
+                        add_job_log(db, job_id, f"⚠️ Redo failed: No cloud backup available", "ERROR", "redo")
                         clip.status = ClipStatus.FAILED.value
-                        clip.error_code = "FILE_NOT_FOUND"
                         clip.error_message = "Original images deleted. Please create a new job."
                         db.commit()
                         return
