@@ -643,8 +643,27 @@ class JobWorker:
                     return
                 
                 if not images_dir.exists():
+                    needs_r2_recovery = True
+                    r2_recovery_reason = "directory does not exist"
+                else:
+                    # Directory exists, but check if it has any image files
+                    # On Render, the directory might exist but be empty after restart
+                    try:
+                        SUPPORTED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
+                        existing_images = [f for f in images_dir.iterdir() if f.suffix.lower() in SUPPORTED_EXTENSIONS]
+                        if not existing_images:
+                            needs_r2_recovery = True
+                            r2_recovery_reason = "directory exists but has no image files"
+                        else:
+                            needs_r2_recovery = False
+                    except Exception as e:
+                        needs_r2_recovery = True
+                        r2_recovery_reason = f"error checking directory: {e}"
+                
+                if needs_r2_recovery:
                     # Local files missing - try to recover from R2 storage into a safe redo_cache folder
-                    print(f"[Worker {WORKER_VERSION}] Local images_dir missing, checking R2 storage...", flush=True)
+                    print(f"[Worker {WORKER_VERSION}] R2 recovery needed: {r2_recovery_reason}", flush=True)
+                    add_job_log(db, job_id, f"[Redo] R2 recovery needed: {r2_recovery_reason}", "DEBUG", "redo")
                     
                     # Check if frames are stored in R2
                     frames_r2_keys = None
@@ -682,11 +701,11 @@ class JobWorker:
                                     job.images_dir = str(redo_cache_dir)
                                     db.commit()
                                     
-                                    # Verify images exist using list_images
-                                    from veo_generator import list_images
-                                    recovered_images = list_images(images_dir)
-                                    if not recovered_images:
-                                        raise Exception("Recovered frames but list_images() returned empty")
+                                    # Verify images exist - just check directory contents
+                                    # Don't use list_images() here as we don't have config yet
+                                    recovered_files = list(redo_cache_dir.iterdir())
+                                    if not recovered_files:
+                                        raise Exception("Recovered frames but directory is empty")
                                     
                                     print(f"[Worker {WORKER_VERSION}] Recovered {downloaded_count} frames to redo_cache for job {job_id[:8]}", flush=True)
                                     add_job_log(
