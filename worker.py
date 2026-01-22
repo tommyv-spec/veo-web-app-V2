@@ -642,7 +642,23 @@ class JobWorker:
                     db.commit()
                     return
                 
+                # Check if directory exists AND has images (not just exists but empty)
+                needs_r2_recovery = False
                 if not images_dir.exists():
+                    needs_r2_recovery = True
+                else:
+                    # Directory exists - check if it has any image files
+                    try:
+                        image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'}
+                        existing_files = [f for f in images_dir.iterdir() if f.suffix.lower() in image_extensions]
+                        if not existing_files:
+                            needs_r2_recovery = True
+                            print(f"[Worker {WORKER_VERSION}] images_dir exists but is empty, need R2 recovery", flush=True)
+                    except Exception as e:
+                        needs_r2_recovery = True
+                        print(f"[Worker {WORKER_VERSION}] Error checking images_dir: {e}, need R2 recovery", flush=True)
+                
+                if needs_r2_recovery:
                     # Local files missing - try to recover from R2 storage (same as first generation)
                     print(f"[Worker {WORKER_VERSION}] Local images_dir missing, attempting R2 recovery...", flush=True)
                     
