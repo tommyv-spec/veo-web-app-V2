@@ -1,0 +1,194 @@
+# Render.yaml - Render Deployment Configuration
+# https://render.com/docs/yaml-spec
+#
+# This configuration includes:
+# - Web service (main API + frontend)
+# - Flow worker (background browser automation)
+# - Key-Value store (Redis-compatible queue)
+
+services:
+  # ============================================
+  # WEB SERVICE (existing app)
+  # ============================================
+  - type: web
+    name: veo-studio
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    
+    # Instance configuration
+    plan: standard  # $25/month - 2GB RAM, 1 CPU (recommended for production)
+    
+    # Auto-deploy from main branch
+    branch: main
+    
+    # Health check
+    healthCheckPath: /api/health
+    
+    # Environment variables
+    envVars:
+      # === API Keys (set in dashboard) ===
+      - key: GEMINI_API_KEY_1
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: REPLICATE_API_TOKEN
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      
+      # === Authentication ===
+      - key: SITE_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: SESSION_DURATION_HOURS
+        value: "24"
+      - key: SECURE_COOKIES
+        value: "true"
+      
+      # === Flow Backend Configuration ===
+      - key: FLOW_BACKEND_ENABLED
+        value: "true"
+      
+      # Reference to Key-Value store
+      - key: KEYVALUE_URL
+        fromService:
+          name: veo-keyvalue
+          type: keyvalue
+          property: connectionString
+      
+      # === S3/R2 Object Storage (set in dashboard) ===
+      # Required for Flow backend - shared storage between web and worker
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY
+        sync: false
+      - key: S3_SECRET_KEY
+        sync: false
+      - key: S3_REGION
+        value: "auto"
+      
+      # === Email Alerts ===
+      - key: SMTP_EMAIL
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: ALERT_EMAIL
+        sync: false
+      
+      # === Python Settings ===
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: MAX_JOB_WORKERS
+        value: "5"
+
+  # ============================================
+  # FLOW WORKER SERVICE (browser automation)
+  # ============================================
+  - type: worker
+    name: veo-flow-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile.flow
+    
+    # Instance configuration
+    # Note: Background workers require paid plan
+    plan: standard  # $25/month - 2GB RAM, 1 CPU (needed for Playwright)
+    
+    # Auto-deploy from main branch
+    branch: main
+    
+    # Environment variables
+    envVars:
+      # === Queue Configuration ===
+      - key: KEYVALUE_URL
+        fromService:
+          name: veo-keyvalue
+          type: keyvalue
+          property: connectionString
+      
+      # === Database (same as web service) ===
+      # Note: For PostgreSQL, you'd reference a database service here
+      # For now, this worker uses its own SQLite or connects to shared DB
+      - key: DATABASE_URL
+        sync: false  # Set in dashboard if using shared PostgreSQL
+      
+      # === S3/R2 Object Storage ===
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY
+        sync: false
+      - key: S3_SECRET_KEY
+        sync: false
+      - key: S3_REGION
+        value: "auto"
+      
+      # === Flow Auth State ===
+      # S3 key for Playwright storage state (cookies/session)
+      - key: FLOW_STORAGE_STATE_URL
+        sync: false  # Set in dashboard: "flow/auth/default/storage_state.json"
+      
+      # === Python Settings ===
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      
+      # === Worker Configuration ===
+      - key: FLOW_MAX_CONCURRENT
+        value: "1"  # Usually 1 for browser automation
+      - key: FLOW_POLL_INTERVAL
+        value: "5"
+
+# ============================================
+# KEY-VALUE STORE (Redis-compatible queue)
+# ============================================
+# Note: Free tier is ephemeral (data lost on restart)
+# Use paid tier for production reliability
+keyValueStores:
+  - name: veo-keyvalue
+    # plan: free     # Free tier - ephemeral
+    plan: starter    # $10/month - persistent (recommended)
+    ipAllowList: []  # Allow all IPs (internal only by default)
+
+# ============================================
+# OPTIONAL: PostgreSQL Database
+# ============================================
+# Uncomment to use shared PostgreSQL instead of SQLite
+# databases:
+#   - name: veo-db
+#     databaseName: veo_studio
+#     user: veo
+#     plan: starter  # $7/month
+
+# ============================================
+# DEPLOYMENT NOTES
+# ============================================
+#
+# Required Setup Steps:
+#
+# 1. S3/R2 Object Storage:
+#    - Create bucket in Cloudflare R2 or AWS S3
+#    - Set S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY in dashboard
+#
+# 2. Flow Authentication:
+#    - Run locally: python -m backends.flow_backend --export-auth
+#    - This opens browser for Google login
+#    - Upload resulting flow_storage_state.json to S3
+#    - Set FLOW_STORAGE_STATE_URL to the S3 key
+#
+# 3. Database (optional):
+#    - For production, uncomment the database section above
+#    - Set DATABASE_URL on both web and worker services
+#
+# 4. API Keys:
+#    - At minimum, set GEMINI_API_KEY_1 for API backend
+#    - Flow backend works without API keys
+#
+# Cost Estimate (with all services):
+# - Web service (standard): $25/month
+# - Worker service (standard): $25/month
+# - Key-Value (starter): $10/month
+# - PostgreSQL (starter, optional): $7/month
+# Total: ~$60-67/month

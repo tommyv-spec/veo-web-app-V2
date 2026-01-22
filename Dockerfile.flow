@@ -1,0 +1,49 @@
+# Dockerfile.flow - Flow Worker Service (Placeholder)
+# 
+# NOTE: This service is currently NOT USED because Flow jobs are handled
+# by the local Flow worker (local_flow_worker_v6.py) running on your machine.
+# 
+# The local worker:
+# - Polls the web app via HTTP API (/api/local-worker/*)
+# - Uses your REAL Chrome browser (better anti-detection)
+# - Runs on your local machine with your Google session
+#
+# This Dockerfile is kept for potential future server-side Flow processing.
+
+# Use Playwright's official Python image (includes browsers + dependencies)
+FROM mcr.microsoft.com/playwright/python:v1.57.0-noble
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+COPY requirements-flow.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements-flow.txt
+
+# Copy application code
+COPY . .
+
+# Create directories with proper permissions BEFORE switching user
+RUN mkdir -p /app/data /app/data/uploads /app/data/outputs /app/temp /app/downloads \
+    && chown -R pwuser:pwuser /app
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV FLOW_TEMP_DIR=/app/temp
+ENV FLOW_DOWNLOAD_DIR=/app/downloads
+ENV DATA_DIR=/app/data
+
+# Run as non-root for security (Playwright image has pwuser)
+USER pwuser
+
+# Health check - just verify Python runs
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "print('healthy')" || exit 1
+
+# Default command - placeholder (local worker handles Flow jobs)
+# To use server-side Flow, create flow_worker.py and update this CMD
+CMD ["python", "-c", "print('Flow worker placeholder - use local_flow_worker_v6.py instead'); import time; time.sleep(86400)"]
