@@ -138,6 +138,10 @@ class ErrorHandler:
         r"platform\.openai\.com",  # Any error mentioning OpenAI platform URL
         r"you.*can.*find.*your.*api.*key.*at",  # Common OpenAI error message suffix
         r"sk-[a-zA-Z0-9]{20,}",  # OpenAI key format in error message (sk-xxx...)
+        # Additional patterns to catch generic OpenAI errors
+        r"authenticationerror",  # OpenAI's AuthenticationError class name
+        r"openai\.authenticationerror",  # Full class path
+        r"api\.openai\.com",  # OpenAI API domain
     ]
     
     def __init__(self):
@@ -175,7 +179,23 @@ class ErrorHandler:
             **context
         }
         
-        # Try to classify
+        # CRITICAL: Check if exception is from OpenAI FIRST (by module)
+        # This MUST happen before pattern matching because OpenAI errors
+        # often contain "Invalid API key" which would match AUTH_PATTERNS
+        exception_module = type(exception).__module__ if hasattr(type(exception), '__module__') else ''
+        if 'openai' in exception_module.lower():
+            error = VeoError(
+                code=ErrorCode.UNKNOWN,  # Don't use API_KEY_INVALID for OpenAI
+                message=f"OpenAI error: {exception_type}",
+                user_message="OpenAI API key error. This affects prompt tuning but videos can still be generated.",
+                details=details,
+                recoverable=True,  # OpenAI is optional, job can continue
+                suggestion="Check your OPENAI_API_KEY environment variable, or disable prompt tuning."
+            )
+            self._increment_count(error.code)
+            return error
+        
+        # Try to classify by patterns
         error = self._classify_by_patterns(error_str, details)
         if error:
             self._increment_count(error.code)
