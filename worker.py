@@ -263,7 +263,8 @@ class JobWorker:
         
         # Cancel all running jobs
         for job_id, generator in list(self.running_jobs.items()):
-            generator.cancel()
+            if generator is not None:
+                generator.cancel()
         
         if self.executor:
             self.executor.shutdown(wait=True)
