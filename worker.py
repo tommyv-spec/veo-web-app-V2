@@ -770,7 +770,67 @@ class JobWorker:
                     db.commit()
                     return
                 
-                images = list_images(images_dir, config)
+                # Try to list images - with R2 recovery fallback for race conditions
+                # The R2 check above may have passed but the directory could be cleared between check and list
+                images = None
+                try:
+                    images = list_images(images_dir, config)
+                except (FileNotFoundError, ValueError) as list_error:
+                    # Directory was cleared between R2 check and list_images call - try R2 recovery now
+                    print(f"[Worker {WORKER_VERSION}] list_images failed ({list_error}), attempting R2 recovery...", flush=True)
+                    add_job_log(db, job_id, f"[Redo] Images dir missing at list_images, attempting R2 recovery", "WARNING", "redo")
+                    db.commit()
+                    
+                    # Attempt R2 recovery (same logic as above but forced)
+                    frames_r2_keys = None
+                    if job.frames_storage_keys:
+                        try:
+                            frames_r2_keys = json.loads(job.frames_storage_keys)
+                        except:
+                            pass
+                    
+                    if frames_r2_keys:
+                        try:
+                            from backends.storage import is_storage_configured, get_storage
+                            if is_storage_configured():
+                                storage = get_storage()
+                                
+                                # Create local directory
+                                images_dir.mkdir(parents=True, exist_ok=True)
+                                
+                                # Download all frames
+                                downloaded_count = 0
+                                for filename, r2_key in frames_r2_keys.items():
+                                    try:
+                                        local_path = images_dir / filename
+                                        storage.download_file(r2_key, local_path)
+                                        downloaded_count += 1
+                                    except Exception as e:
+                                        print(f"[Worker] Failed to download {filename}: {e}", flush=True)
+                                
+                                if downloaded_count > 0:
+                                    print(f"[Worker {WORKER_VERSION}] Late R2 recovery: downloaded {downloaded_count} frames", flush=True)
+                                    add_job_log(db, job_id, f"✓ Late R2 recovery: downloaded {downloaded_count} frames", "INFO", "redo")
+                                    db.commit()
+                                    # Retry list_images
+                                    images = list_images(images_dir, config)
+                                else:
+                                    raise ValueError(f"R2 recovery downloaded 0 frames")
+                            else:
+                                raise ValueError(f"R2 storage not configured")
+                        except Exception as r2_error:
+                            add_job_log(db, job_id, f"⚠️ Late R2 recovery failed: {r2_error}", "ERROR", "redo")
+                            clip.status = ClipStatus.FAILED.value
+                            clip.error_message = f"Images unavailable and R2 recovery failed: {r2_error}"
+                            db.commit()
+                            return
+                    else:
+                        add_job_log(db, job_id, f"⚠️ Redo failed: No R2 backup available for recovery", "ERROR", "redo")
+                        clip.status = ClipStatus.FAILED.value
+                        clip.error_message = "Original images deleted and no cloud backup available. Please create a new job."
+                        db.commit()
+                        return
+                
                 if not images:
                     raise ValueError(f"No images found in {images_dir}")
                 
@@ -1449,7 +1509,59 @@ class JobWorker:
                 output_dir = Path(output_dir_str)
                 output_dir.mkdir(parents=True, exist_ok=True)
                 
-                images = list_images(images_dir_path, config)
+                # Try to list images - with R2 recovery fallback for race conditions
+                images = None
+                try:
+                    images = list_images(images_dir_path, config)
+                except (FileNotFoundError, ValueError) as list_error:
+                    # Directory was cleared between R2 check and list_images call - try R2 recovery now
+                    print(f"[Worker {WORKER_VERSION}] list_images failed ({list_error}), attempting late R2 recovery...", flush=True)
+                    add_job_log(db, job_id, f"Images dir missing at list_images, attempting late R2 recovery", "WARNING", "system")
+                    db.commit()
+                    
+                    # Re-fetch R2 keys
+                    job = db.query(Job).filter(Job.id == job_id).first()
+                    frames_r2_keys = None
+                    if job and job.frames_storage_keys:
+                        try:
+                            frames_r2_keys = json.loads(job.frames_storage_keys)
+                        except:
+                            pass
+                    
+                    if frames_r2_keys:
+                        try:
+                            from backends.storage import is_storage_configured, get_storage
+                            if is_storage_configured():
+                                storage = get_storage()
+                                
+                                # Create local directory
+                                images_dir_path.mkdir(parents=True, exist_ok=True)
+                                
+                                # Download all frames
+                                downloaded_count = 0
+                                for filename, r2_key in frames_r2_keys.items():
+                                    try:
+                                        local_path = images_dir_path / filename
+                                        storage.download_file(r2_key, local_path)
+                                        downloaded_count += 1
+                                    except Exception as e:
+                                        print(f"[Worker] Failed to download {filename}: {e}", flush=True)
+                                
+                                if downloaded_count > 0:
+                                    print(f"[Worker {WORKER_VERSION}] Late R2 recovery: downloaded {downloaded_count} frames", flush=True)
+                                    add_job_log(db, job_id, f"✓ Late R2 recovery: downloaded {downloaded_count} frames", "INFO", "system")
+                                    db.commit()
+                                    # Retry list_images
+                                    images = list_images(images_dir_path, config)
+                                else:
+                                    raise ValueError(f"Late R2 recovery downloaded 0 frames")
+                            else:
+                                raise ValueError(f"R2 storage not configured for late recovery")
+                        except Exception as r2_error:
+                            raise ValueError(f"Images directory unavailable and late R2 recovery failed: {r2_error}")
+                    else:
+                        raise ValueError(f"Images directory unavailable and no R2 backup: {images_dir_path}")
+                
                 if not images:
                     raise ValueError(f"No images found in {images_dir_path}")
                 
