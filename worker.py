@@ -4568,5 +4568,5 @@ class JobWorker:
 # Singleton worker instance
 worker = JobWorker(max_workers=app_config.max_workers)
 print("=" * 60, flush=True)
-print("WORKER VERSION: 2025-01-22-DEBUG-A", flush=True)
+print(f"WORKER VERSION: {WORKER_VERSION}", flush=True)
 print("=" * 60, flush=True)
