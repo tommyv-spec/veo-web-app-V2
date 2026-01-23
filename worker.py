@@ -3,9 +3,9 @@
 Background Worker for Veo Web App
 
 ######################################################################
-# WORKER FILE VERSION: 2025-01-22-DEBUG-A
-# LAST MODIFIED: 2025-01-22
-# CHANGES: Added debug step logging to find auth failure root cause
+# WORKER FILE VERSION: 2025-01-23-LATE-R2-FIX-V2
+# LAST MODIFIED: 2025-01-23
+# CHANGES: Added late R2 recovery for race conditions in redo/job flow
 ######################################################################
 
 Handles:
@@ -46,7 +46,7 @@ from error_handler import VeoError, error_handler
 # ============================================================
 # WORKER VERSION - Update this on each deployment for tracking
 # ============================================================
-WORKER_VERSION = "v2025-01-22-R2-RECOVERY"
+WORKER_VERSION = "v2025-01-23-LATE-R2-FIX-V2"
 WORKER_TYPE = "api"  # This is the API worker (not flow/local)
 
 
