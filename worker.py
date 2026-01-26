@@ -722,6 +722,23 @@ class JobWorker:
                     clip.error_message = str(recovery_err)
                     db.commit()
                     return
+                except Exception as recovery_exc:
+                    # Unexpected error during recovery - check if we should re-queue
+                    has_r2_backup = bool(job.frames_storage_keys)
+                    if has_r2_backup:
+                        # R2 backup exists - silently re-queue to retry
+                        print(f"[Worker] ensure_frames_present failed ({recovery_exc}), but R2 backup exists - re-queuing", flush=True)
+                        clip.status = ClipStatus.REDO_QUEUED.value
+                        clip.error_message = None
+                        db.commit()
+                        return
+                    else:
+                        # No recovery possible
+                        add_job_log(db, job_id, f"⚠️ Redo failed: {recovery_exc}", "ERROR", "redo")
+                        clip.status = ClipStatus.FAILED.value
+                        clip.error_message = str(recovery_exc)
+                        db.commit()
+                        return
                 
                 # NOW we can safely update status and log - we know images exist
                 clip.status = ClipStatus.GENERATING.value
@@ -1219,17 +1236,9 @@ class JobWorker:
                         'images directory does not exist' in error_str  # Flow job with missing dir
                     )
                     
-                    # DEBUG: Log the decision factors
+                    # DEBUG: Log the decision factors (console only, not UI)
                     print(f"[Worker] EXCEPTION DEBUG: job_id={job_id[:8]}, error_str[:100]='{error_str[:100]}'", flush=True)
                     print(f"[Worker] EXCEPTION DEBUG: job={job is not None}, backend={job.backend if job else 'N/A'}, is_flow_job_error={is_flow_job_error}, is_file_not_found={is_file_not_found}", flush=True)
-                    
-                    # Also log to job so we can see in UI
-                    add_job_log(
-                        db, job_id,
-                        f"[DEBUG-EXCEPTION] is_flow={is_flow_job_error}, is_file_not_found={is_file_not_found}, backend={job.backend if job else 'N/A'}",
-                        "DEBUG", "system"
-                    )
-                    db.commit()
                     
                     is_rate_limit = (
                         error.code.value == "RATE_LIMIT_429" or
@@ -1252,18 +1261,29 @@ class JobWorker:
                         )
                         print(f"[Worker] Flow job {job_id[:8]} silently re-queued for Flow worker (file not found is expected)", flush=True)
                     elif is_file_not_found and not is_flow_job_error:
-                        # API job with missing files (ephemeral storage cleared)
-                        # This is a permanent failure - files cannot be recovered
-                        self._handle_error(job_id, error)
-                        clip.status = ClipStatus.FAILED.value
-                        clip.error_code = "FILE_NOT_FOUND"
-                        clip.error_message = "Original images no longer available. Please create a new job with re-uploaded images."
-                        add_job_log(
-                            db, job_id,
-                            f"⚠️ Redo failed: Original images were deleted (server storage cleared). Please create a new job.",
-                            "ERROR", "redo"
-                        )
-                        print(f"[Worker] API job {job_id[:8]} redo failed - ephemeral storage cleared", flush=True)
+                        # API job with missing files - check if R2 recovery is possible
+                        has_r2_backup = bool(job and job.frames_storage_keys)
+                        
+                        if has_r2_backup:
+                            # R2 backup exists - silently re-queue for recovery (don't log error)
+                            # The next attempt will use ensure_frames_present to recover from R2
+                            clip.status = ClipStatus.REDO_QUEUED.value
+                            clip.error_message = None
+                            clip.error_code = None
+                            print(f"[Worker] API job {job_id[:8]} file missing but R2 backup exists - silently re-queued for recovery", flush=True)
+                            # Don't log error to UI - this is a recoverable situation
+                        else:
+                            # No R2 backup - this is a permanent failure
+                            self._handle_error(job_id, error)
+                            clip.status = ClipStatus.FAILED.value
+                            clip.error_code = "FILE_NOT_FOUND"
+                            clip.error_message = "Original images no longer available. Please create a new job with re-uploaded images."
+                            add_job_log(
+                                db, job_id,
+                                f"⚠️ Redo failed: Original images were deleted and no cloud backup available. Please create a new job.",
+                                "ERROR", "redo"
+                            )
+                            print(f"[Worker] API job {job_id[:8]} redo failed - no R2 backup available", flush=True)
                     elif is_rate_limit:
                         # Log and re-queue
                         self._handle_error(job_id, error)

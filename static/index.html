@@ -3897,6 +3897,10 @@ Example: A realistic vertical video of a professional presenter speaking directl
         // Start global refresh when page loads
         startGlobalJobsRefresh();
         
+        // Track last redo request time globally - keep polling for 90s after redo
+        let lastRedoRequestTime = 0;
+        const REDO_GRACE_PERIOD_MS = 90000; // 90 seconds grace period after redo
+        
         function selectJob(id){
             if(selectedJobId===id)return;selectedJobId=id;lastLogId=0;clipStates={};
             setActiveState(); // Reopen Review panel when selecting a job
@@ -3909,6 +3913,7 @@ Example: A realistic vertical video of a professional presenter speaking directl
             loadJob(id);loadClips(id);loadLogs(id);
             let pollTimer=null;
             let lastJobStatus = null;
+            let previousClipStates = {}; // Track clip states to detect changes
             (function startPolling(){
                 if(pollTimer)clearInterval(pollTimer);
                 // Poll every 2 seconds instead of 1 - less aggressive
@@ -3944,11 +3949,31 @@ Example: A realistic vertical video of a professional presenter speaking directl
                         const clips = clipsRes ? await clipsRes.json() : [];
                         const hasActiveClips = clips.some(c => c.status === 'generating' || c.status === 'redo_queued' || c.status === 'flow_redo_queued' || c.status === 'pending');
                         
-                        if (hasActiveClips) {
-                            // Keep polling - clips are still being processed
+                        // Check if we're in the redo grace period (90 seconds after a redo request)
+                        const inRedoGracePeriod = (Date.now() - lastRedoRequestTime) < REDO_GRACE_PERIOD_MS;
+                        
+                        // Check if any clip states changed since last poll (indicates backend activity)
+                        const currentClipStates = {};
+                        clips.forEach(c => { currentClipStates[c.id] = c.status; });
+                        const clipStateChanged = Object.keys(currentClipStates).some(cid => 
+                            previousClipStates[cid] !== currentClipStates[cid]
+                        );
+                        previousClipStates = currentClipStates;
+                        
+                        if (hasActiveClips || inRedoGracePeriod) {
+                            // Keep polling - clips are still being processed OR we're in grace period
+                            if (inRedoGracePeriod && !hasActiveClips) {
+                                console.log('[Polling] In redo grace period, continuing to poll for', 
+                                    Math.round((REDO_GRACE_PERIOD_MS - (Date.now() - lastRedoRequestTime))/1000), 's');
+                            }
+                            loadClips(id);
+                        } else if (clipStateChanged) {
+                            // Clip state just changed - wait a bit more to catch final state
+                            console.log('[Polling] Clip state changed, continuing to poll');
                             loadClips(id);
                         } else {
                             // Do one final refresh and stop
+                            console.log('[Polling] No active clips, stopping polling');
                             loadClips(id);
                             refreshJobsList();
                             clearInterval(pollTimer);
@@ -4292,6 +4317,10 @@ Example: A realistic vertical video of a professional presenter speaking directl
             
             if(clipIdx!==null)markClipRegenerating(clipIdx);
             closeModal();
+            
+            // Track redo request time for grace period polling
+            lastRedoRequestTime = Date.now();
+            console.log('[Redo] Request time set, grace period active for 90s');
             
             const body = {reason};
             if(dialogueChanged && newDialogue.trim()) {
