@@ -750,31 +750,32 @@ class JobWorker:
                 
                 # ===== ENSURE FRAMES ARE PRESENT (R2 recovery if needed) =====
                 # This single call handles all recovery logic and logs appropriately
-                try:
-                    ensure_frames_present(job, images_dir, db, add_job_log)
-                except RuntimeError as recovery_err:
-                    add_job_log(db, job_id, f"⚠️ Redo failed: {recovery_err}", "ERROR", "redo")
-                    clip.status = ClipStatus.FAILED.value
-                    clip.error_message = str(recovery_err)
-                    db.commit()
-                    return
-                except Exception as recovery_exc:
-                    # Unexpected error during recovery - check if we should re-queue
-                    has_r2_backup = bool(job.frames_storage_keys)
-                    if has_r2_backup:
-                        # R2 backup exists - silently re-queue to retry
-                        print(f"[Worker] ensure_frames_present failed ({recovery_exc}), but R2 backup exists - re-queuing", flush=True)
-                        clip.status = ClipStatus.REDO_QUEUED.value
-                        clip.error_message = None
-                        db.commit()
-                        return
-                    else:
-                        # No recovery possible
-                        add_job_log(db, job_id, f"⚠️ Redo failed: {recovery_exc}", "ERROR", "redo")
+                # We retry up to 2 times if there are transient errors (NOT re-queue, which causes race conditions)
+                max_recovery_attempts = 2
+                for recovery_attempt in range(max_recovery_attempts):
+                    try:
+                        ensure_frames_present(job, images_dir, db, add_job_log)
+                        break  # Success - exit retry loop
+                    except RuntimeError as recovery_err:
+                        # Permanent failure (no R2 keys, storage not configured, etc.)
+                        add_job_log(db, job_id, f"⚠️ Redo failed: {recovery_err}", "ERROR", "redo")
                         clip.status = ClipStatus.FAILED.value
-                        clip.error_message = str(recovery_exc)
+                        clip.error_message = str(recovery_err)
                         db.commit()
                         return
+                    except Exception as recovery_exc:
+                        # Transient error - retry within same thread (NOT re-queue)
+                        if recovery_attempt < max_recovery_attempts - 1:
+                            print(f"[Worker] ensure_frames_present failed ({recovery_exc}), retrying ({recovery_attempt + 1}/{max_recovery_attempts})...", flush=True)
+                            time.sleep(1)  # Brief pause before retry
+                            continue
+                        else:
+                            # All retries exhausted - fail the clip
+                            add_job_log(db, job_id, f"⚠️ Redo failed after {max_recovery_attempts} attempts: {recovery_exc}", "ERROR", "redo")
+                            clip.status = ClipStatus.FAILED.value
+                            clip.error_message = f"Recovery failed after {max_recovery_attempts} attempts: {str(recovery_exc)}"
+                            db.commit()
+                            return
                 
                 # NOW we can safely update status and log - we know images exist
                 clip.status = ClipStatus.GENERATING.value
@@ -1317,21 +1318,27 @@ class JobWorker:
                         )
                         print(f"[Worker] Flow job {job_id[:8]} silently re-queued for Flow worker (file not found is expected)", flush=True)
                     elif is_file_not_found and not is_flow_job_error:
-                        # API job with missing files - check if R2 recovery is possible
+                        # API job with missing files - this is a failure
+                        # DO NOT re-queue here - it causes race conditions with duplicate redo threads
+                        # The ensure_frames_present call should have already handled R2 recovery
+                        # If we're here, recovery already failed or something else went wrong
                         has_r2_backup = bool(job and job.frames_storage_keys)
                         
+                        # Log what happened for debugging
                         if has_r2_backup:
-                            # R2 backup exists - silently re-queue for recovery (don't log error)
-                            # The next attempt will use ensure_frames_present to recover from R2
-                            clip.status = ClipStatus.REDO_QUEUED.value
-                            clip.error_message = None
-                            clip.error_code = None
-                            print(f"[Worker] API job {job_id[:8]} file missing but R2 backup exists - silently re-queued for recovery", flush=True)
-                            # Don't log error to UI - this is a recoverable situation
+                            # R2 backup exists but recovery still failed - something else is wrong
+                            # Fail instead of re-queuing to avoid race condition
+                            clip.status = ClipStatus.FAILED.value
+                            clip.error_code = "RECOVERY_FAILED"
+                            clip.error_message = "Cloud recovery was attempted but files still unavailable. Please try again."
+                            add_job_log(
+                                db, job_id,
+                                f"⚠️ Redo failed: Recovery from cloud was attempted but files remain unavailable. Error: {str(e)[:100]}",
+                                "ERROR", "redo"
+                            )
+                            print(f"[Worker] API job {job_id[:8]} file missing even after R2 recovery - failing clip (not re-queueing)", flush=True)
                         else:
                             # No R2 backup - this is a permanent failure
-                            # Don't call _handle_error here - it logs confusing technical message
-                            # Instead, log a clear user-friendly message
                             clip.status = ClipStatus.FAILED.value
                             clip.error_code = "FILE_NOT_FOUND"
                             clip.error_message = "Original images no longer available. Please create a new job with re-uploaded images."
