@@ -2664,6 +2664,24 @@ async def list_outputs(
                         "variant": clip.selected_variant,
                         "storage": "r2"
                     })
+                else:
+                    # Local file missing and no output_url - try R2 by filename as fallback
+                    try:
+                        from backends.storage import is_storage_configured, get_storage
+                        if is_storage_configured():
+                            storage = get_storage()
+                            r2_key = f"jobs/{job_id}/outputs/{clip.output_filename}"
+                            if storage.exists(r2_key):
+                                videos.append({
+                                    "filename": clip.output_filename,
+                                    "size": 0,
+                                    "url": f"/api/jobs/{job_id}/outputs/{clip.output_filename}",
+                                    "clip_index": clip.clip_index,
+                                    "variant": clip.selected_variant,
+                                    "storage": "r2"
+                                })
+                    except Exception as e:
+                        print(f"[Outputs] R2 check error for clip {clip.clip_index}: {e}", flush=True)
     else:
         # Return all videos from filesystem
         if output_dir.exists():
@@ -2684,38 +2702,37 @@ async def list_outputs(
                     "clip_index": clip_idx,
                 })
         
-        # Also check R2 for Flow job outputs
-        if job and job.backend == "flow":
-            try:
-                from backends.storage import is_storage_configured, get_storage
+        # Also check R2 for job outputs (all backend types)
+        try:
+            from backends.storage import is_storage_configured, get_storage
+            
+            if is_storage_configured():
+                storage = get_storage()
+                r2_prefix = f"jobs/{job_id}/outputs/"
+                r2_keys = storage.list_objects(prefix=r2_prefix, max_keys=100)
                 
-                if is_storage_configured():
-                    storage = get_storage()
-                    r2_prefix = f"jobs/{job_id}/outputs/"
-                    r2_keys = storage.list_objects(prefix=r2_prefix, max_keys=100)
-                    
-                    existing_filenames = {v["filename"] for v in videos}
-                    
-                    for key in r2_keys:
-                        filename = key.split("/")[-1]
-                        if filename and filename.endswith(".mp4") and filename not in existing_filenames:
-                            # Extract clip index from filename (clip_0.mp4 -> 0)
-                            clip_idx = None
-                            try:
-                                if filename.startswith("clip_"):
-                                    clip_idx = int(filename.replace("clip_", "").replace(".mp4", ""))
-                            except:
-                                pass
-                            
-                            videos.append({
-                                "filename": filename,
-                                "size": 0,
-                                "url": f"/api/jobs/{job_id}/outputs/{filename}",
-                                "clip_index": clip_idx,
-                                "storage": "r2"
-                            })
-            except Exception as e:
-                print(f"[Outputs] R2 list error: {e}", flush=True)
+                existing_filenames = {v["filename"] for v in videos}
+                
+                for key in r2_keys:
+                    filename = key.split("/")[-1]
+                    if filename and filename.endswith(".mp4") and filename not in existing_filenames:
+                        # Extract clip index from filename (clip_0.mp4 -> 0)
+                        clip_idx = None
+                        try:
+                            if filename.startswith("clip_"):
+                                clip_idx = int(filename.replace("clip_", "").replace(".mp4", ""))
+                        except:
+                            pass
+                        
+                        videos.append({
+                            "filename": filename,
+                            "size": 0,
+                            "url": f"/api/jobs/{job_id}/outputs/{filename}",
+                            "clip_index": clip_idx,
+                            "storage": "r2"
+                        })
+        except Exception as e:
+            print(f"[Outputs] R2 list error: {e}", flush=True)
     
     videos.sort(key=lambda x: x.get("clip_index") or 0 if approved_only else x["filename"])
     

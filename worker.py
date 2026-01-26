@@ -1157,6 +1157,23 @@ class JobWorker:
                         # The original frames should be preserved. The redo just generates
                         # a new version of the clip using the same frames.
                         
+                        # Upload to R2 for persistence (API jobs)
+                        if result.get("output_path"):
+                            try:
+                                from backends.storage import is_storage_configured, get_storage
+                                if is_storage_configured():
+                                    storage = get_storage()
+                                    r2_key = f"jobs/{job_id}/outputs/{new_filename}"
+                                    storage.upload_file(str(result["output_path"]), r2_key, content_type='video/mp4')
+                                    output_url = storage.get_presigned_url(r2_key, expires_in=86400 * 7)
+                                    clip.output_url = output_url
+                                    # Update version entry with URL
+                                    versions[-1]["url"] = output_url
+                                    clip.versions_json = json.dumps(versions)
+                                    print(f"[Worker] Uploaded redo clip {clip.clip_index} to R2: {r2_key}", flush=True)
+                            except Exception as r2_err:
+                                print(f"[Worker] R2 upload failed for redo clip {clip.clip_index} (non-fatal): {r2_err}", flush=True)
+                        
                         add_job_log(
                             db, job_id,
                             f"Redo completed for clip {clip.clip_index + 1} (attempt {clip.generation_attempt}/3)",
@@ -2771,6 +2788,25 @@ class JobWorker:
                                 completed_clip_videos[clip_index] = video_path
                                 # NOTE: Don't add to approved_clip_videos here!
                                 # That happens when user approves (in waiting_clips check)
+                                
+                                # Upload to R2 for persistence (API jobs)
+                                # This ensures videos survive server restarts on ephemeral platforms
+                                try:
+                                    from backends.storage import is_storage_configured, get_storage
+                                    if is_storage_configured():
+                                        storage = get_storage()
+                                        r2_key = f"jobs/{job_id}/outputs/{new_filename}"
+                                        storage.upload_file(video_path, r2_key, content_type='video/mp4')
+                                        # Get presigned URL for UI access
+                                        output_url = storage.get_presigned_url(r2_key, expires_in=86400 * 7)
+                                        clip.output_url = output_url
+                                        # Update version entry with URL
+                                        versions[0]["url"] = output_url
+                                        clip.versions_json = json.dumps(versions)
+                                        print(f"[Worker] Uploaded clip {clip_index} to R2: {r2_key}", flush=True)
+                                except Exception as r2_err:
+                                    print(f"[Worker] R2 upload failed for clip {clip_index} (non-fatal): {r2_err}", flush=True)
+                                    # Non-fatal - local file still exists
                         elif result.get("skipped") and result.get("skip_reason") == "celebrity_filter":
                             # Celebrity filter triggered - mark as skipped
                             clip.status = ClipStatus.SKIPPED.value
@@ -3180,6 +3216,22 @@ class JobWorker:
                             clip.status = ClipStatus.COMPLETED.value
                             clip.output_filename = new_filename
                             clip.approval_status = "pending_review"
+                            
+                            # Upload to R2 for persistence (API jobs)
+                            if result.get("output_path"):
+                                try:
+                                    from backends.storage import is_storage_configured, get_storage
+                                    if is_storage_configured():
+                                        storage = get_storage()
+                                        r2_key = f"jobs/{job_id}/outputs/{new_filename}"
+                                        storage.upload_file(str(result["output_path"]), r2_key, content_type='video/mp4')
+                                        output_url = storage.get_presigned_url(r2_key, expires_in=86400 * 7)
+                                        clip.output_url = output_url
+                                        versions[0]["url"] = output_url
+                                        clip.versions_json = json.dumps(versions)
+                                        print(f"[Worker] Uploaded clip {clip_index} to R2: {r2_key}", flush=True)
+                                except Exception as r2_err:
+                                    print(f"[Worker] R2 upload failed for clip {clip_index} (non-fatal): {r2_err}", flush=True)
                         else:
                             # Check if this is a "no keys" situation - re-queue as redo
                             if result.get("no_keys") or result.get("should_pause"):
@@ -4105,6 +4157,23 @@ class JobWorker:
                                 # NOTE: Don't add to approved_clip_videos here!
                                 # CONTINUE mode clips must wait for user approval first.
                                 # approved_clip_videos is populated when approval is detected in waiting_clips check.
+                                
+                                # Upload to R2 for persistence (API jobs)
+                                try:
+                                    from backends.storage import is_storage_configured, get_storage
+                                    if is_storage_configured():
+                                        storage = get_storage()
+                                        r2_key = f"jobs/{job_id}/outputs/{new_filename}"
+                                        storage.upload_file(video_path, r2_key, content_type='video/mp4')
+                                        output_url = storage.get_presigned_url(r2_key, expires_in=86400 * 7)
+                                        clip.output_url = output_url
+                                        # Update version entry with URL
+                                        if versions:
+                                            versions[-1]["url"] = output_url
+                                            clip.versions_json = json.dumps(versions)
+                                        print(f"[Worker] Uploaded clip {clip_index} to R2: {r2_key}", flush=True)
+                                except Exception as r2_err:
+                                    print(f"[Worker] R2 upload failed for clip {clip_index} (non-fatal): {r2_err}", flush=True)
                         else:
                             # Check if this is a "no keys" situation - re-queue as redo
                             if result.get("no_keys") or result.get("should_pause"):
