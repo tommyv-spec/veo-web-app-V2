@@ -46,7 +46,7 @@ from error_handler import VeoError, error_handler
 # ============================================================
 # WORKER VERSION - Update this on each deployment for tracking
 # ============================================================
-WORKER_VERSION = "v2025-01-23-LATE-R2-FIX-V2"
+WORKER_VERSION = "ZIP-14-REDO-R2-RECOVERY-ON"
 WORKER_TYPE = "api"  # This is the API worker (not flow/local)
 
 
@@ -66,6 +66,76 @@ def safe_images_dir(images_dir: Union[str, None]) -> Union[Path, None]:
     if images_dir.strip() == "." or images_dir.strip() == "..":
         return None
     return Path(images_dir)
+
+
+def ensure_frames_present(job, images_dir: Path, db, add_job_log_func):
+    """
+    Ensure frames are present locally, recovering from R2 if needed.
+    Call this BEFORE any filesystem access in redo to guarantee frames exist.
+    
+    Returns True if frames are present, raises RuntimeError if recovery fails.
+    """
+    exts = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
+    
+    # If dir exists and has images, we're good
+    if images_dir.exists():
+        try:
+            if any(p.suffix.lower() in exts for p in images_dir.iterdir()):
+                return True
+        except Exception:
+            pass
+    
+    # Force recovery attempt
+    print(f"[Redo] ensure_frames_present: missing/empty -> R2 recovery for job {job.id[:8]}", flush=True)
+    add_job_log_func(db, job.id, "[Redo] Local frames missing/empty. Attempting cloud recovery.", "WARNING", "redo")
+    db.commit()
+    
+    # Parse keys (support both JSON and python-dict-string)
+    frames_r2_keys = None
+    raw = job.frames_storage_keys
+    if raw:
+        try:
+            frames_r2_keys = json.loads(raw)
+        except Exception:
+            # Fallback for legacy rows
+            import ast
+            try:
+                frames_r2_keys = ast.literal_eval(raw)
+            except Exception:
+                frames_r2_keys = None
+    
+    if not frames_r2_keys:
+        add_job_log_func(db, job.id, "[Redo] FATAL: No frames_storage_keys in DB - cannot recover", "ERROR", "redo")
+        db.commit()
+        raise RuntimeError("No frames_storage_keys available in DB")
+    
+    from backends.storage import is_storage_configured, get_storage
+    if not is_storage_configured():
+        add_job_log_func(db, job.id, "[Redo] FATAL: Cloud storage not configured", "ERROR", "redo")
+        db.commit()
+        raise RuntimeError("Storage not configured")
+    
+    storage = get_storage()
+    images_dir.mkdir(parents=True, exist_ok=True)
+    
+    ok = 0
+    for filename, r2_key in frames_r2_keys.items():
+        try:
+            local_path = images_dir / filename
+            storage.download_file(r2_key, local_path)
+            ok += 1
+        except Exception as e:
+            print(f"[Redo] Failed to download {filename}: {e}", flush=True)
+    
+    if ok == 0:
+        add_job_log_func(db, job.id, "[Redo] FATAL: Could not download any frames from R2", "ERROR", "redo")
+        db.commit()
+        raise RuntimeError("R2 recovery downloaded 0 frames")
+    
+    print(f"[Redo] ensure_frames_present: recovered {ok} frames", flush=True)
+    add_job_log_func(db, job.id, f"✓ Recovered {ok} frames from cloud storage", "INFO", "redo")
+    db.commit()
+    return True
 
 
 def is_flow_job(job) -> bool:
@@ -642,81 +712,27 @@ class JobWorker:
                     db.commit()
                     return
                 
-                # Check if directory exists AND has images (not just exists but empty)
-                needs_r2_recovery = False
-                if not images_dir.exists():
-                    needs_r2_recovery = True
-                else:
-                    # Directory exists - check if it has any image files
-                    try:
-                        image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'}
-                        existing_files = [f for f in images_dir.iterdir() if f.suffix.lower() in image_extensions]
-                        if not existing_files:
-                            needs_r2_recovery = True
-                            print(f"[Worker {WORKER_VERSION}] images_dir exists but is empty, need R2 recovery", flush=True)
-                    except Exception as e:
-                        needs_r2_recovery = True
-                        print(f"[Worker {WORKER_VERSION}] Error checking images_dir: {e}, need R2 recovery", flush=True)
-                
-                if needs_r2_recovery:
-                    # Local files missing - try to recover from R2 storage (same as first generation)
-                    print(f"[Worker {WORKER_VERSION}] Local images_dir missing, attempting R2 recovery...", flush=True)
-                    
-                    frames_r2_keys = None
-                    if job.frames_storage_keys:
-                        try:
-                            frames_r2_keys = json.loads(job.frames_storage_keys)
-                        except:
-                            pass
-                    
-                    if frames_r2_keys:
-                        try:
-                            from backends.storage import is_storage_configured, get_storage
-                            if is_storage_configured():
-                                storage = get_storage()
-                                
-                                # Create local directory
-                                images_dir.mkdir(parents=True, exist_ok=True)
-                                
-                                # Download all frames
-                                downloaded_count = 0
-                                for filename, r2_key in frames_r2_keys.items():
-                                    try:
-                                        local_path = images_dir / filename
-                                        storage.download_file(r2_key, local_path)
-                                        downloaded_count += 1
-                                    except Exception as e:
-                                        print(f"[Worker] Failed to download {filename}: {e}", flush=True)
-                                
-                                if downloaded_count > 0:
-                                    print(f"[Worker {WORKER_VERSION}] Recovered {downloaded_count} frames from R2", flush=True)
-                                    add_job_log(db, job_id, f"✓ Recovered {downloaded_count} frames from cloud storage", "INFO", "redo")
-                                    db.commit()
-                                else:
-                                    raise ValueError(f"No frames could be downloaded from R2 storage")
-                            else:
-                                raise ValueError(f"R2 storage not configured")
-                        except Exception as e:
-                            add_job_log(db, job_id, f"⚠️ Redo failed: R2 recovery failed ({e})", "ERROR", "redo")
-                            clip.status = ClipStatus.FAILED.value
-                            clip.error_message = f"Could not recover frames: {e}"
-                            db.commit()
-                            return
-                    else:
-                        add_job_log(db, job_id, f"⚠️ Redo failed: No cloud backup available", "ERROR", "redo")
-                        clip.status = ClipStatus.FAILED.value
-                        clip.error_message = "Original images deleted. Please create a new job."
-                        db.commit()
-                        return
+                # ===== ENSURE FRAMES ARE PRESENT (R2 recovery if needed) =====
+                # This single call handles all recovery logic and logs appropriately
+                try:
+                    ensure_frames_present(job, images_dir, db, add_job_log)
+                except RuntimeError as recovery_err:
+                    add_job_log(db, job_id, f"⚠️ Redo failed: {recovery_err}", "ERROR", "redo")
+                    clip.status = ClipStatus.FAILED.value
+                    clip.error_message = str(recovery_err)
+                    db.commit()
+                    return
                 
                 # NOW we can safely update status and log - we know images exist
                 clip.status = ClipStatus.GENERATING.value
                 clip.started_at = datetime.utcnow()
                 db.commit()
                 
+                # DEBUG: Log frames_storage_keys status to diagnose R2 recovery issues
+                frames_keys_status = "SET" if job.frames_storage_keys else "NULL"
                 add_job_log(
                     db, job_id, 
-                    f"[{WORKER_VERSION}] Starting redo for clip {clip.clip_index + 1} (attempt {clip.generation_attempt}/3)",
+                    f"[{WORKER_VERSION}] Starting redo for clip {clip.clip_index + 1} (attempt {clip.generation_attempt}/3) [R2 keys: {frames_keys_status}]",
                     "INFO", "redo"
                 )
                 

@@ -147,7 +147,7 @@ from models import (
     init_db, get_db_session, Job, Clip, JobLog, BlacklistEntry,
     get_job_logs_since, add_job_log, User, UserAPIKey
 )
-from worker import worker
+from worker import worker, WORKER_VERSION
 from error_handler import ErrorCode
 
 
@@ -270,6 +270,12 @@ async def lifespan(app: FastAPI):
     """Application lifespan management"""
     # Startup
     init_db()
+    
+    # === VERSION INFO - Proves which code is deployed ===
+    print(f"[Build] WORKER_VERSION={WORKER_VERSION}", flush=True)
+    print(f"[Build] RENDER_GIT_COMMIT={os.environ.get('RENDER_GIT_COMMIT', 'not set')}", flush=True)
+    print(f"[Build] IMAGE_TAG={os.environ.get('IMAGE_TAG', 'not set')}", flush=True)
+    
     worker.start()
     print("[App] Started")
     
@@ -373,6 +379,18 @@ static_dir.mkdir(exist_ok=True)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+
+# ============ Version Endpoint (for deployment verification) ============
+
+@app.get("/api/version")
+def get_version():
+    """Return version info to verify which code is deployed"""
+    return {
+        "app": "veo-web-app",
+        "worker_version": WORKER_VERSION,
+        "render_commit": os.environ.get("RENDER_GIT_COMMIT", "not set"),
+    }
 
 
 # ============ Authentication Endpoints (Google OAuth) ============
