@@ -1433,6 +1433,10 @@ class JobWorker:
                 if config.parallel_clips != original_parallel:
                     print(f"[Worker] Adjusted parallel_clips: {original_parallel} → {config.parallel_clips}", flush=True)
                 
+                # EXPLICIT LOG: We're about to start the dangerous section
+                add_job_log(db, job_id, "[DEBUG] Checkpoint A: After key validation, before dialogue parsing", "DEBUG", "system")
+                db.commit()
+                
                 # DEBUG: Log each step to find where it fails
                 add_job_log(db, job_id, "[DEBUG] Step 1: About to parse dialogue JSON", "DEBUG", "system")
                 db.commit()
@@ -1652,25 +1656,37 @@ class JobWorker:
             # Log the RAW exception before classification (helps debug misclassifications)
             import traceback
             raw_error = f"{type(e).__name__}: {str(e)[:300]}"
+            tb_str = traceback.format_exc()[-1000:]
             print(f"[Worker] RAW EXCEPTION in job {job_id[:8]}:", flush=True)
             print(f"[Worker]   Type: {type(e).__name__}", flush=True)
             print(f"[Worker]   Message: {str(e)[:500]}", flush=True)
-            print(f"[Worker]   Traceback: {traceback.format_exc()[-1000:]}", flush=True)
+            print(f"[Worker]   Traceback: {tb_str}", flush=True)
             
             error = error_handler.classify_exception(e, {"job_id": job_id})
             self._handle_error(job_id, error)
             
             # ALWAYS log raw error first (separate DB transaction to guarantee it's saved)
-            try:
-                with get_db() as db:
-                    add_job_log(
-                        db, job_id,
-                        f"[RAW ERROR] {raw_error}",
-                        "ERROR", "system"
-                    )
-                    db.commit()
-            except Exception:
-                pass  # Don't let logging failure mask the real error
+            # Use multiple fallback attempts
+            for attempt in range(3):
+                try:
+                    with get_db() as db:
+                        add_job_log(
+                            db, job_id,
+                            f"[RAW ERROR attempt {attempt+1}] {raw_error}",
+                            "ERROR", "system"
+                        )
+                        # Also log the traceback
+                        add_job_log(
+                            db, job_id,
+                            f"[TRACEBACK] {tb_str[:500]}",
+                            "ERROR", "system"
+                        )
+                        db.commit()
+                        break  # Success, exit retry loop
+                except Exception as log_err:
+                    print(f"[Worker] Failed to log error (attempt {attempt+1}): {log_err}", flush=True)
+                    if attempt == 2:
+                        print(f"[Worker] GIVING UP on error logging for job {job_id[:8]}", flush=True)
             
             # Only mark as failed if no clips succeeded
             with get_db() as db:
