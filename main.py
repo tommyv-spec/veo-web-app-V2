@@ -1382,6 +1382,27 @@ async def create_job(
     
     # If Flow backend, generate prompts and additional Flow-specific setup
     if backend == BackendType.FLOW:
+        # Flow backend REQUIRES cloud storage for frames
+        if not is_storage_configured():
+            add_job_log(db, job_id, "❌ Flow backend requires cloud storage (S3/R2) to be configured", "ERROR", "flow")
+            job.status = JobStatus.FAILED.value
+            job.error_message = "Flow backend requires cloud storage. Please configure S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET."
+            db.commit()
+            raise HTTPException(
+                status_code=500,
+                detail={"error": "Flow backend requires cloud storage to be configured", "code": "STORAGE_NOT_CONFIGURED"}
+            )
+        
+        if not frames_storage_keys:
+            add_job_log(db, job_id, "❌ No frames were uploaded to cloud storage", "ERROR", "flow")
+            job.status = JobStatus.FAILED.value
+            job.error_message = "No frames uploaded to cloud storage. Check that images were provided and storage is accessible."
+            db.commit()
+            raise HTTPException(
+                status_code=500,
+                detail={"error": "No frames uploaded to cloud storage for Flow job", "code": "NO_FRAMES_UPLOADED"}
+            )
+        
         try:
             # === Generate prompts using the same engine as API backend ===
             from pathlib import Path
@@ -1461,7 +1482,14 @@ async def create_job(
             uploaded_frames_list = [frames_storage_keys[k] for k in sorted(frames_storage_keys.keys())] if frames_storage_keys else []
             num_images = len(uploaded_frames_list)
             use_interpolation = config_data.get("use_interpolation", True)
-            single_image_mode = num_images == 1
+            single_image_mode = num_images <= 1  # Treat 0 or 1 images as single_image_mode
+            
+            # CRITICAL: If no images uploaded, we cannot process Flow job
+            if num_images == 0:
+                error_msg = "No images uploaded to cloud storage. Flow backend requires at least one image."
+                print(f"[main.py] ERROR: {error_msg}")
+                add_job_log(db, job_id, f"❌ {error_msg}", "ERROR", "flow")
+                raise ValueError(error_msg)
             
             # Parse scenes data if present
             dialogue_raw = json.loads(job.dialogue_json) if job.dialogue_json else {}
@@ -1488,11 +1516,18 @@ async def create_job(
                 if not clip_mode:
                     clip_mode = "blend"
                 
+                # Safe image index calculation (num_images is guaranteed > 0 at this point)
+                if single_image_mode:
+                    image_idx = 0
+                else:
+                    # Use start_image_idx from line if available, otherwise cycle through images
+                    image_idx = line.get("start_image_idx", i % num_images) if num_images > 0 else 0
+                
                 clip_info_list.append({
                     "index": i,
                     "text": line.get("text", ""),
                     "dialogue_id": line.get("id", i + 1),
-                    "image_idx": line.get("start_image_idx", i % num_images) if not single_image_mode else 0,
+                    "image_idx": image_idx,
                     "scene_index": scene_idx,
                     "clip_mode": clip_mode,
                     "scene_transition": line.get("scene_transition"),
@@ -1649,6 +1684,14 @@ No subtitles, no text overlays. No background music. Only the speaker's voice.
             import traceback
             traceback.print_exc()
             add_job_log(db, job_id, f"Failed to setup Flow job: {e}", "ERROR", "flow")
+            # Mark job as failed so it's not picked up by the worker with 0 clips
+            job.status = JobStatus.FAILED.value
+            job.error_message = f"Flow job setup failed: {str(e)[:500]}"
+            db.commit()
+            raise HTTPException(
+                status_code=500,
+                detail={"error": f"Failed to setup Flow job: {str(e)}", "code": "FLOW_SETUP_FAILED"}
+            )
     
     return JobResponse(
         id=job.id,
