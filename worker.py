@@ -82,8 +82,12 @@ def ensure_frames_present(job, images_dir: Path, db, add_job_log_func):
         try:
             if any(p.suffix.lower() in exts for p in images_dir.iterdir()):
                 return True
-        except Exception:
-            pass
+        except FileNotFoundError:
+            # Directory was deleted between exists() and iterdir() - continue to R2 recovery
+            print(f"[Redo] ensure_frames_present: directory existed but was deleted during check", flush=True)
+        except Exception as e:
+            # Other error during directory listing - continue to R2 recovery
+            print(f"[Redo] ensure_frames_present: error listing directory: {e}", flush=True)
     
     # Force recovery attempt
     print(f"[Redo] ensure_frames_present: missing/empty -> R2 recovery for job {job.id[:8]}", flush=True)
@@ -105,32 +109,64 @@ def ensure_frames_present(job, images_dir: Path, db, add_job_log_func):
                 frames_r2_keys = None
     
     if not frames_r2_keys:
-        add_job_log_func(db, job.id, "[Redo] FATAL: No frames_storage_keys in DB - cannot recover", "ERROR", "redo")
+        add_job_log_func(
+            db, job.id, 
+            "⚠️ Redo failed: Original images were deleted and no cloud backup exists. "
+            "Please create a new job with re-uploaded images.", 
+            "ERROR", "redo"
+        )
         db.commit()
-        raise RuntimeError("No frames_storage_keys available in DB")
+        raise RuntimeError(
+            "Original images unavailable. Cloud storage backup was not configured when this job was created. "
+            "Please create a new job with re-uploaded images."
+        )
     
     from backends.storage import is_storage_configured, get_storage
     if not is_storage_configured():
-        add_job_log_func(db, job.id, "[Redo] FATAL: Cloud storage not configured", "ERROR", "redo")
+        add_job_log_func(
+            db, job.id, 
+            "⚠️ Redo failed: Cloud storage is not configured on this server. "
+            "Cannot recover original images.", 
+            "ERROR", "redo"
+        )
         db.commit()
-        raise RuntimeError("Storage not configured")
+        raise RuntimeError(
+            "Cloud storage is not configured on this server. Cannot recover original images. "
+            "Please contact support or create a new job with re-uploaded images."
+        )
     
     storage = get_storage()
-    images_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create directory if it doesn't exist
+    try:
+        images_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        add_job_log_func(db, job.id, f"⚠️ Redo failed: Cannot create images directory: {e}", "ERROR", "redo")
+        db.commit()
+        raise RuntimeError(f"Cannot create images directory: {e}")
     
     ok = 0
+    errors = []
     for filename, r2_key in frames_r2_keys.items():
         try:
             local_path = images_dir / filename
             storage.download_file(r2_key, local_path)
             ok += 1
         except Exception as e:
+            errors.append(f"{filename}: {e}")
             print(f"[Redo] Failed to download {filename}: {e}", flush=True)
     
     if ok == 0:
-        add_job_log_func(db, job.id, "[Redo] FATAL: Could not download any frames from R2", "ERROR", "redo")
+        error_details = "; ".join(errors[:3])  # Show first 3 errors
+        if len(errors) > 3:
+            error_details += f" (and {len(errors) - 3} more)"
+        add_job_log_func(
+            db, job.id, 
+            f"⚠️ Redo failed: Could not download any frames from cloud storage. Errors: {error_details}", 
+            "ERROR", "redo"
+        )
         db.commit()
-        raise RuntimeError("R2 recovery downloaded 0 frames")
+        raise RuntimeError(f"Cloud recovery failed - could not download any frames. First error: {errors[0] if errors else 'Unknown'}")
     
     print(f"[Redo] ensure_frames_present: recovered {ok} frames", flush=True)
     add_job_log_func(db, job.id, f"✓ Recovered {ok} frames from cloud storage", "INFO", "redo")
@@ -1250,7 +1286,10 @@ class JobWorker:
                         'no such file or directory' in error_str or
                         'errno 2' in error_str or
                         'no images found in .' in error_str or  # Flow job with empty images_dir
-                        'images directory does not exist' in error_str  # Flow job with missing dir
+                        'images directory does not exist' in error_str or  # Missing dir
+                        'images directory was deleted' in error_str or  # Race condition - dir deleted during access
+                        'original images unavailable' in error_str or  # Recovery failed
+                        'cannot access images directory' in error_str  # Permission or other OS error
                     )
                     
                     # DEBUG: Log the decision factors (console only, not UI)
@@ -1291,13 +1330,16 @@ class JobWorker:
                             # Don't log error to UI - this is a recoverable situation
                         else:
                             # No R2 backup - this is a permanent failure
-                            self._handle_error(job_id, error)
+                            # Don't call _handle_error here - it logs confusing technical message
+                            # Instead, log a clear user-friendly message
                             clip.status = ClipStatus.FAILED.value
                             clip.error_code = "FILE_NOT_FOUND"
                             clip.error_message = "Original images no longer available. Please create a new job with re-uploaded images."
                             add_job_log(
                                 db, job_id,
-                                f"⚠️ Redo failed: Original images were deleted and no cloud backup available. Please create a new job.",
+                                f"⚠️ Redo failed: Original images were deleted and no cloud backup was available. "
+                                f"Cloud storage may not have been configured when this job was created. "
+                                f"Please create a new job with re-uploaded images.",
                                 "ERROR", "redo"
                             )
                             print(f"[Worker] API job {job_id[:8]} redo failed - no R2 backup available", flush=True)

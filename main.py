@@ -1311,6 +1311,7 @@ async def create_job(
     
     frames_storage_keys = {}  # Will store {filename: r2_key}
     first_frame_local_path = None
+    upload_errors = []  # Track any upload failures
     
     if is_storage_configured():
         try:
@@ -1319,36 +1320,58 @@ async def create_job(
             # Get all images from the job's images directory
             if images_dir.exists():
                 image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
-                for img_file in sorted(images_dir.iterdir()):
-                    if img_file.suffix.lower() in image_extensions:
-                        try:
-                            # Keep track of first frame for analysis
-                            if not first_frame_local_path:
-                                first_frame_local_path = img_file
-                            
-                            # Upload to R2
-                            remote_key = storage.upload_job_frame(
-                                job_id, 
-                                img_file.name, 
-                                img_file
-                            )
-                            frames_storage_keys[img_file.name] = remote_key
-                            print(f"[main.py] Uploaded frame to R2: {remote_key}")
-                        except Exception as e:
-                            print(f"[main.py] Failed to upload frame {img_file.name}: {e}")
+                image_files = [f for f in sorted(images_dir.iterdir()) if f.suffix.lower() in image_extensions]
+                
+                if not image_files:
+                    print(f"[main.py] WARNING: No image files found in {images_dir}")
+                    add_job_log(db, job_id, f"⚠️ No image files found in upload directory", "WARNING", "system")
+                else:
+                    print(f"[main.py] Found {len(image_files)} image files to upload to cloud storage")
+                    
+                for img_file in image_files:
+                    try:
+                        # Keep track of first frame for analysis
+                        if not first_frame_local_path:
+                            first_frame_local_path = img_file
+                        
+                        # Upload to R2
+                        remote_key = storage.upload_job_frame(
+                            job_id, 
+                            img_file.name, 
+                            img_file
+                        )
+                        frames_storage_keys[img_file.name] = remote_key
+                        print(f"[main.py] Uploaded frame to cloud: {remote_key}")
+                    except Exception as e:
+                        error_msg = f"{img_file.name}: {str(e)[:100]}"
+                        upload_errors.append(error_msg)
+                        print(f"[main.py] Failed to upload frame {img_file.name}: {e}")
+            else:
+                print(f"[main.py] WARNING: images_dir does not exist: {images_dir}")
+                add_job_log(db, job_id, f"⚠️ Upload directory not found", "WARNING", "system")
             
             if frames_storage_keys:
                 # Store R2 keys in database for redo recovery
                 job.frames_storage_keys = json.dumps(frames_storage_keys)
                 db.commit()
-                add_job_log(db, job_id, f"Uploaded {len(frames_storage_keys)} frames to storage", "INFO", "system")
+                
+                if upload_errors:
+                    add_job_log(db, job_id, f"✓ Backed up {len(frames_storage_keys)} frames to cloud (⚠️ {len(upload_errors)} failed)", "WARNING", "system")
+                else:
+                    add_job_log(db, job_id, f"✓ Backed up {len(frames_storage_keys)} frames to cloud storage", "INFO", "system")
             else:
-                print(f"[main.py] WARNING: No frames uploaded to R2")
+                print(f"[main.py] WARNING: No frames uploaded to cloud storage")
+                if upload_errors:
+                    add_job_log(db, job_id, f"⚠️ Cloud storage backup failed. Errors: {'; '.join(upload_errors[:3])}", "WARNING", "system")
+                else:
+                    add_job_log(db, job_id, "⚠️ Warning: No frames to backup to cloud storage. Redo may not work if files are cleared.", "WARNING", "system")
         except Exception as e:
-            print(f"[main.py] WARNING: Failed to upload frames to R2: {e}")
+            print(f"[main.py] WARNING: Failed to connect to cloud storage: {e}")
+            add_job_log(db, job_id, f"⚠️ Cloud storage connection failed: {str(e)[:100]}. Redo may not work if files are cleared.", "WARNING", "system")
             # Continue anyway - local files still exist for initial processing
     else:
         print(f"[main.py] INFO: Object storage not configured - redos may fail if server restarts")
+        add_job_log(db, job_id, "⚠️ Cloud storage (S3/R2) not configured. Redo will not work if server restarts. Set S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET.", "WARNING", "system")
         # Still get the first frame for prompt generation
         if images_dir.exists():
             image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
@@ -2542,6 +2565,70 @@ async def get_job_logs(
         )
         for log in logs
     ]
+
+
+@app.get("/api/jobs/{job_id}/backup-status")
+async def get_job_backup_status(
+    job_id: str,
+    db: DBSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Check if a job's frames are backed up to cloud storage.
+    
+    This is important for redo functionality - if frames are not backed up,
+    redo will fail if the local files are deleted.
+    """
+    job = get_user_job(db, job_id, current_user)
+    
+    # Check local files
+    images_dir = Path(job.images_dir) if job.images_dir else None
+    local_files_exist = False
+    local_file_count = 0
+    
+    if images_dir and images_dir.exists():
+        try:
+            image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+            local_files = [f for f in images_dir.iterdir() if f.suffix.lower() in image_extensions]
+            local_file_count = len(local_files)
+            local_files_exist = local_file_count > 0
+        except Exception as e:
+            local_files_exist = False
+    
+    # Check cloud backup
+    cloud_backup_exists = False
+    cloud_file_count = 0
+    
+    if job.frames_storage_keys:
+        try:
+            keys = json.loads(job.frames_storage_keys)
+            cloud_file_count = len(keys)
+            cloud_backup_exists = cloud_file_count > 0
+        except:
+            pass
+    
+    # Determine redo capability
+    can_redo = local_files_exist or cloud_backup_exists
+    
+    return {
+        "job_id": job_id,
+        "local_files": {
+            "exist": local_files_exist,
+            "count": local_file_count,
+            "path": str(images_dir) if images_dir else None,
+        },
+        "cloud_backup": {
+            "exist": cloud_backup_exists,
+            "count": cloud_file_count,
+        },
+        "can_redo": can_redo,
+        "redo_source": "local" if local_files_exist else ("cloud" if cloud_backup_exists else "none"),
+        "message": (
+            "✓ Redo available (local files exist)" if local_files_exist else
+            "✓ Redo available (cloud backup exists)" if cloud_backup_exists else
+            "⚠️ Redo NOT available - local files deleted and no cloud backup. Create a new job with re-uploaded images."
+        )
+    }
 
 
 # ============ Server-Sent Events ============
@@ -3819,6 +3906,13 @@ async def health_check():
     except:
         sdk_status = "unknown"
     
+    # Check storage configuration
+    try:
+        from backends.storage import is_storage_configured, get_storage_status
+        storage_status = get_storage_status()
+    except Exception as e:
+        storage_status = {"configured": False, "error": str(e)}
+    
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
@@ -3829,8 +3923,42 @@ async def health_check():
         "sdk": {
             "google_genai": sdk_status,
             "message": "Video generation available" if sdk_status == "installed" else "Install google-genai for video generation"
-        }
+        },
+        "storage": storage_status
     }
+
+
+@app.get("/api/storage-status")
+async def get_storage_status_endpoint():
+    """
+    Check object storage (S3/R2) configuration status.
+    
+    Returns details about whether storage is configured and working.
+    This is important for redo functionality - without storage, 
+    redos will fail if the server restarts.
+    """
+    from backends.storage import is_storage_configured, get_storage, get_storage_status
+    
+    status = get_storage_status()
+    
+    # Try a simple operation to verify connectivity
+    if status["configured"]:
+        try:
+            storage = get_storage()
+            # Just try to list objects with a limit of 1 to verify connection
+            storage.client.list_objects_v2(
+                Bucket=storage.bucket_name,
+                MaxKeys=1
+            )
+            status["connection"] = "ok"
+        except Exception as e:
+            status["connection"] = "failed"
+            status["connection_error"] = str(e)
+    else:
+        status["connection"] = "not_configured"
+        status["setup_hint"] = "Set S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET environment variables"
+    
+    return status
 
 
 # ============ Admin - API Keys ============

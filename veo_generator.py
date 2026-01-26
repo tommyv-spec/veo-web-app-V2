@@ -950,15 +950,36 @@ def list_images(images_dir: Path, config: VideoConfig) -> List[Path]:
     if not images_dir.exists():
         raise ValueError(f"Images directory does not exist: {images_dir}")
     
-    files = [
-        p for p in images_dir.iterdir() 
-        if p.suffix.lower() in SUPPORTED_IMAGE_FORMATS
-    ]
+    # Wrap in try/except to handle race condition where directory is deleted
+    # between exists() check and iterdir() call
+    try:
+        files = [
+            p for p in images_dir.iterdir() 
+            if p.suffix.lower() in SUPPORTED_IMAGE_FORMATS
+        ]
+    except FileNotFoundError:
+        # Directory was deleted between exists() check and iterdir()
+        raise ValueError(
+            f"Images directory was deleted: {images_dir}. "
+            "Original files are no longer available. Please create a new job with re-uploaded images."
+        )
+    except OSError as e:
+        # Handle other OS errors (permission denied, etc.)
+        raise ValueError(f"Cannot access images directory {images_dir}: {e}")
     
-    if config.images_sort_key == "date":
-        files.sort(key=lambda p: p.stat().st_mtime, reverse=config.images_sort_reverse)
-    else:
-        files.sort(key=lambda p: p.name.lower(), reverse=config.images_sort_reverse)
+    # Also wrap sorting in try/except in case files are deleted during sort
+    try:
+        if config.images_sort_key == "date":
+            files.sort(key=lambda p: p.stat().st_mtime, reverse=config.images_sort_reverse)
+        else:
+            files.sort(key=lambda p: p.name.lower(), reverse=config.images_sort_reverse)
+    except FileNotFoundError:
+        # A file was deleted during sorting - re-filter the list
+        files = [f for f in files if f.exists()]
+        if config.images_sort_key == "date":
+            files.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=config.images_sort_reverse)
+        else:
+            files.sort(key=lambda p: p.name.lower(), reverse=config.images_sort_reverse)
     
     return files
 

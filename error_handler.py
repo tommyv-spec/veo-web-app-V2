@@ -327,8 +327,19 @@ class ErrorHandler:
                 suggestion="Check your OPENAI_API_KEY environment variable, or disable prompt tuning."
             )
         
-        # File errors
+        # File errors - check if it's an images/uploads directory issue
         if exception_type in ("FileNotFoundError", "IOError"):
+            error_str = str(exception).lower()
+            # Check if this is an images/uploads directory issue
+            if "uploads" in error_str or "images" in error_str:
+                return VeoError(
+                    code=ErrorCode.IMAGE_NOT_FOUND,
+                    message=f"Original images unavailable: {str(exception)}",
+                    user_message="Original images are no longer available. The files may have been deleted from temporary storage.",
+                    details=details,
+                    recoverable=False,
+                    suggestion="Please create a new job with re-uploaded images. To prevent this in the future, ensure cloud storage (R2) is configured."
+                )
             return VeoError(
                 code=ErrorCode.IMAGE_NOT_FOUND,
                 message=f"File not found: {str(exception)}",

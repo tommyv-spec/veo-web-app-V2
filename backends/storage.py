@@ -486,4 +486,42 @@ def is_storage_configured() -> bool:
     Returns:
         True if configured, False otherwise
     """
-    return get_storage().is_configured()
+    storage = get_storage()
+    configured = storage.is_configured()
+    
+    # Debug logging to help diagnose configuration issues
+    if not configured:
+        missing = []
+        if not storage.endpoint_url:
+            missing.append("S3_ENDPOINT")
+        if not storage.access_key:
+            missing.append("S3_ACCESS_KEY")
+        if not storage.secret_key:
+            missing.append("S3_SECRET_KEY")
+        if not storage.bucket_name:
+            missing.append("S3_BUCKET")
+        if missing:
+            print(f"[Storage] NOT configured - missing env vars: {', '.join(missing)}", flush=True)
+        else:
+            print(f"[Storage] NOT configured - values are empty strings", flush=True)
+    
+    return configured
+
+
+def get_storage_status() -> dict:
+    """
+    Get detailed storage configuration status for diagnostics.
+    
+    Returns:
+        Dict with configuration status details
+    """
+    storage = get_storage()
+    return {
+        "configured": storage.is_configured(),
+        "has_endpoint": bool(storage.endpoint_url),
+        "has_access_key": bool(storage.access_key),
+        "has_secret_key": bool(storage.secret_key),
+        "has_bucket": bool(storage.bucket_name),
+        "bucket_name": storage.bucket_name if storage.bucket_name else None,
+        "endpoint_domain": storage.endpoint_url.split("//")[-1].split("/")[0] if storage.endpoint_url else None,
+    }
