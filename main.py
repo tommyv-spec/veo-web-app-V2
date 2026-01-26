@@ -4634,8 +4634,16 @@ async def local_worker_get_redo_clips(
         if worker_id and clip.claimed_by_worker != worker_id:
             clip.claimed_by_worker = worker_id
             clip.claimed_at = datetime.utcnow()
+            # CRITICAL: Change status to GENERATING to prevent infinite claim loop
+            # Without this, the clip keeps getting returned on every poll
+            clip.status = ClipStatus.GENERATING.value
+            clip.started_at = datetime.utcnow()
             db.commit()
-            print(f"[Worker] Clip {clip.id} (redo) claimed by {worker_id}", flush=True)
+            print(f"[Worker] Clip {clip.id} (redo) claimed by {worker_id}, status → generating", flush=True)
+            add_job_log(db, clip.job_id, f"Flow redo for clip {clip.clip_index + 1} claimed by local worker", "INFO", "redo")
+        elif worker_id and clip.claimed_by_worker == worker_id:
+            # Already claimed by this worker - skip (don't log again to avoid spam)
+            pass
         
         # Get frame URLs
         start_filename = clip.start_frame.split('/')[-1] if clip.start_frame else None
@@ -4727,6 +4735,15 @@ async def local_worker_update_clip_status(
         if update.status in ['completed', 'failed']:
             clip.claimed_by_worker = None
             clip.claimed_at = None
+            
+            # Log Flow redo failures for debugging
+            if update.status == 'failed' and old_status == ClipStatus.GENERATING.value:
+                error_msg = update.error_message or "Unknown error"
+                add_job_log(
+                    db, clip.job_id,
+                    f"⚠️ Flow redo for clip {clip.clip_index + 1} failed: {error_msg[:100]}",
+                    "ERROR", "redo"
+                )
         # Clear error state when status is NOT failed (e.g., generating, completed)
         if update.status != 'failed':
             clip.error_message = None
@@ -4739,7 +4756,8 @@ async def local_worker_update_clip_status(
         clip.error_message = update.error_message
     
     # When completing a clip (from redo or initial generation), update approval status
-    if update.status == 'completed' and old_status in ['generating', 'redo_queued']:
+    # Include flow_redo_queued for Flow backend redos
+    if update.status == 'completed' and old_status in ['generating', 'redo_queued', 'flow_redo_queued']:
         clip.approval_status = 'pending_review'
         clip.completed_at = datetime.utcnow()
         
