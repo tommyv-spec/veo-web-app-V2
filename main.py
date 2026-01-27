@@ -1524,8 +1524,12 @@ async def create_job(
                 # Safe image index calculation (num_images is guaranteed > 0 at this point)
                 if single_image_mode:
                     image_idx = 0
+                elif auto_cycle_mode:
+                    # AUTO-CYCLE MODE: Always cycle through images based on clip index
+                    # Ignore start_image_idx from dialogue - let the cycle determine the frame
+                    image_idx = i % num_images
                 else:
-                    # Use start_image_idx from line if available, otherwise cycle through images
+                    # STORYBOARD MODE: Use start_image_idx from dialogue if available
                     image_idx = line.get("start_image_idx", i % num_images) if num_images > 0 else 0
                 
                 clip_info_list.append({
@@ -1569,11 +1573,18 @@ async def create_job(
                         next_image_idx = next_info["image_idx"]
                         
                         if auto_cycle_mode:
-                            # AUTO-CYCLE MODE: Check if next clip uses a different image
-                            if next_image_idx != start_idx:
+                            # AUTO-CYCLE MODE: End frame is ALWAYS the next image in the cycle
+                            # This creates smooth transitions: img0→img1, img1→img2, img2→img0, etc.
+                            next_in_cycle = (start_idx + 1) % num_images
+                            if next_in_cycle != start_idx:  # Only if we have multiple images
                                 use_end_frame = True
-                                actual_end_idx = next_image_idx
-                                end_frame_reason = f"auto-cycle: blend to next image {next_image_idx + 1}"
+                                actual_end_idx = next_in_cycle
+                                end_frame_reason = f"auto-cycle: blend to image {next_in_cycle + 1}"
+                                scene_transition_handled = True
+                            else:
+                                # Single image - no end frame needed
+                                use_end_frame = False
+                                end_frame_reason = "auto-cycle: single image"
                                 scene_transition_handled = True
                         elif next_scene != scene_index:
                             # STORYBOARD MODE: Next clip is in DIFFERENT scene
@@ -1595,14 +1606,12 @@ async def create_job(
                             actual_end_idx = last_frame_index
                             end_frame_reason = f"last clip with explicit end frame"
                         elif is_last_clip and auto_cycle_mode:
-                            # Cycle back to different image
-                            for offset in range(1, num_images):
-                                next_idx = (start_idx + offset) % num_images
-                                if next_idx != start_idx:
-                                    use_end_frame = True
-                                    actual_end_idx = next_idx
-                                    end_frame_reason = f"last clip: cycle to image {next_idx + 1}"
-                                    break
+                            # AUTO-CYCLE MODE last clip: End with next image in cycle
+                            next_in_cycle = (start_idx + 1) % num_images
+                            if next_in_cycle != start_idx:
+                                use_end_frame = True
+                                actual_end_idx = next_in_cycle
+                                end_frame_reason = f"last clip: cycle to image {next_in_cycle + 1}"
                             else:
                                 use_end_frame = False
                                 end_frame_reason = "last clip: single image"
@@ -1611,13 +1620,12 @@ async def create_job(
                             end_frame_reason = "last clip (storyboard)"
                         elif clip_mode == "blend":
                             if auto_cycle_mode:
-                                for offset in range(1, num_images):
-                                    next_idx = (start_idx + offset) % num_images
-                                    if next_idx != start_idx:
-                                        use_end_frame = True
-                                        actual_end_idx = next_idx
-                                        end_frame_reason = f"blend: cycle to image {next_idx + 1}"
-                                        break
+                                # AUTO-CYCLE MODE blend: Use next image in cycle
+                                next_in_cycle = (start_idx + 1) % num_images
+                                if next_in_cycle != start_idx:
+                                    use_end_frame = True
+                                    actual_end_idx = next_in_cycle
+                                    end_frame_reason = f"blend: cycle to image {next_in_cycle + 1}"
                                 else:
                                     use_end_frame = False
                                     end_frame_reason = "blend: single image"
