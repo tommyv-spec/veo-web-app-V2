@@ -4678,7 +4678,16 @@ async def local_worker_get_pending_job(
     if not job:
         return {"job": None}
     
+    print(f"[LocalWorker] Found job {job.id[:8]}, querying clips...", flush=True)
     clips = db.query(Clip).filter(Clip.job_id == job.id).order_by(Clip.clip_index.asc()).all()
+    print(f"[LocalWorker] Found {len(clips)} clips for job {job.id[:8]}", flush=True)
+    
+    # DEBUG: If no clips, check if they exist at all
+    if not clips:
+        total_clips_in_db = db.query(Clip).filter(Clip.job_id == job.id).count()
+        print(f"[LocalWorker] DEBUG: Total clips in DB for this job: {total_clips_in_db}", flush=True)
+        # Check job's total_clips field
+        print(f"[LocalWorker] DEBUG: job.total_clips = {job.total_clips}", flush=True)
     
     # Parse config JSON
     config = json.loads(job.config_json) if job.config_json else {}
@@ -4723,6 +4732,8 @@ async def local_worker_get_pending_job(
         }
         
         clips_data.append(clip_data)
+    
+    print(f"[LocalWorker] Returning job {job.id[:8]} with {len(clips_data)} clips to worker", flush=True)
     
     return {
         "job": {
