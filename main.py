@@ -1458,6 +1458,10 @@ async def create_job(
             # Get voice profile
             voice_profile = get_default_voice_profile(language, video_config.user_context)
             
+            print(f"[main.py] DEBUG: voice_profile obtained, proceeding to frame assignment")
+            print(f"[main.py] DEBUG: dialogue_list has {len(dialogue_list)} items")
+            print(f"[main.py] DEBUG: frames_storage_keys has {len(frames_storage_keys)} items: {list(frames_storage_keys.keys())}")
+            
             # === FRAME ASSIGNMENT LOGIC (same as API worker) ===
             # 
             # For each clip, we need to determine:
@@ -1499,6 +1503,7 @@ async def create_job(
             auto_cycle_mode = not scenes_data or len(scenes_data) == 0
             
             print(f"[main.py] Frame assignment: {num_images} images, single_image={single_image_mode}, interpolation={use_interpolation}, auto_cycle={auto_cycle_mode}")
+            print(f"[main.py] DEBUG: About to build clip_info_list from {len(dialogue_list)} dialogue lines")
             
             # Build clip info with frame assignments
             clip_info_list = []
@@ -1533,7 +1538,11 @@ async def create_job(
                     "scene_transition": line.get("scene_transition"),
                 })
             
+            print(f"[main.py] DEBUG: Built clip_info_list with {len(clip_info_list)} items")
+            
             # Create clips with proper frame assignments
+            print(f"[main.py] DEBUG: Starting clip creation loop...")
+            clips_created = 0
             for i, info in enumerate(clip_info_list):
                 start_idx = info["image_idx"]
                 clip_mode = info["clip_mode"]
@@ -1664,8 +1673,12 @@ No subtitles, no text overlays. No background music. Only the speaker's voice.
                     prompt_text=prompt_text,
                 )
                 db.add(clip)
+                clips_created += 1
+                print(f"[main.py] DEBUG: Added clip {i} to session (total added: {clips_created})")
             
+            print(f"[main.py] DEBUG: Clip creation loop complete. About to commit {clips_created} clips...")
             db.commit()
+            print(f"[main.py] DEBUG: Commit successful!")
             print(f"[main.py] Created {len(dialogue_list)} clips with prompts for Flow job")
             add_job_log(db, job_id, f"Generated prompts for {len(dialogue_list)} clips", "INFO", "flow")
             
