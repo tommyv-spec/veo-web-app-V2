@@ -4748,6 +4748,8 @@ async def local_worker_get_pending_job(
             "id": job.id,
             "aspect_ratio": config.get("aspect_ratio", "9:16"),
             "duration": config.get("duration", "8"),
+            "language": job.language or config.get("language", "English"),
+            "voice_profile": config.get("voice_profile", "") or config.get("user_context", ""),
             "resolution": config.get("resolution", "720p"),
             "use_interpolation": use_interpolation,
             "single_image_mode": single_image_mode,
@@ -4869,12 +4871,24 @@ async def local_worker_get_redo_clips(
         start_filename = clip.start_frame.split('/')[-1] if clip.start_frame else None
         end_filename = clip.end_frame.split('/')[-1] if clip.end_frame else None
         
+        # Get job config for voice_profile if available
+        job_config = {}
+        if job.config_json:
+            try:
+                import json
+                job_config = json.loads(job.config_json) if isinstance(job.config_json, str) else job.config_json
+            except:
+                pass
+        
         clips_data.append({
             "id": clip.id,
             "job_id": job.id,
             "clip_index": clip.clip_index,
             "dialogue_text": clip.dialogue_text,
             "prompt": clip.prompt_text,
+            "language": job.language or "English",
+            "duration": job.duration or "8",
+            "voice_profile": job_config.get("voice_profile", "") or job_config.get("user_context", ""),
             "start_frame_url": f"{base_url}/api/local-worker/frames/{job.id}/{start_filename}" if start_filename else None,
             "end_frame_url": f"{base_url}/api/local-worker/frames/{job.id}/{end_filename}" if end_filename else None,
             "flow_project_url": job.flow_project_url,
