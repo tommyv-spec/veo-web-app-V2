@@ -4739,6 +4739,11 @@ async def local_worker_get_pending_job(
             "end_frame_url": f"{base_url}/api/local-worker/frames/{job.id}/{end_filename}" if end_filename else None,
         }
         
+        # DEBUG: Log prompt info
+        prompt_len = len(clip.prompt_text) if clip.prompt_text else 0
+        prompt_preview = clip.prompt_text[:100] if clip.prompt_text else "NONE"
+        print(f"[LocalWorker] Clip {clip.clip_index}: prompt_text length={prompt_len}, preview='{prompt_preview}...'", flush=True)
+        
         clips_data.append(clip_data)
     
     print(f"[LocalWorker] Returning job {job.id[:8]} with {len(clips_data)} clips to worker", flush=True)
@@ -4748,7 +4753,7 @@ async def local_worker_get_pending_job(
             "id": job.id,
             "aspect_ratio": config.get("aspect_ratio", "9:16"),
             "duration": config.get("duration", "8"),
-            "language": job.language or config.get("language", "English"),
+            "language": config.get("language", "English"),
             "voice_profile": config.get("voice_profile", "") or config.get("user_context", ""),
             "resolution": config.get("resolution", "720p"),
             "use_interpolation": use_interpolation,
@@ -4886,8 +4891,8 @@ async def local_worker_get_redo_clips(
             "clip_index": clip.clip_index,
             "dialogue_text": clip.dialogue_text,
             "prompt": clip.prompt_text,
-            "language": job.language or "English",
-            "duration": job.duration or "8",
+            "language": job_config.get("language", "English"),
+            "duration": job_config.get("duration", "8"),
             "voice_profile": job_config.get("voice_profile", "") or job_config.get("user_context", ""),
             "start_frame_url": f"{base_url}/api/local-worker/frames/{job.id}/{start_filename}" if start_filename else None,
             "end_frame_url": f"{base_url}/api/local-worker/frames/{job.id}/{end_filename}" if end_filename else None,
