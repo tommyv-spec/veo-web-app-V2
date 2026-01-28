@@ -52,6 +52,8 @@ class FlowClip:
     start_frame_key: Optional[str] = None  # S3 key if using object storage
     end_frame_key: Optional[str] = None    # S3 key if using object storage
     prompt: Optional[str] = None  # Pre-built prompt from API prompt engine
+    voice_profile: Optional[str] = None  # Voice profile for prompt building
+    duration: float = 8.0  # Clip duration in seconds
     
     # Output tracking
     flow_clip_id: Optional[str] = None
@@ -76,23 +78,161 @@ class FlowJob:
     on_error: Optional[Callable[[str], None]] = None
 
 
-def get_prompt(dialogue: str, language: str = "English") -> str:
+def get_prompt(
+    dialogue: str, 
+    language: str = "English",
+    voice_profile: str = None,
+    duration: float = 8.0,
+    facial_expression: str = None,
+    body_language: str = None,
+    delivery_style: str = None,
+    emotion: str = None,
+    redo_feedback: str = None,
+) -> str:
     """
     Generate the video generation prompt from dialogue text.
+    
+    This matches the structure from veo_generator.py build_prompt() to ensure
+    consistency between API and Flow backends.
+    
+    KEY PRINCIPLES (from veo_generator.py):
+    1. NO VISUAL REDESCRIPTION: The image locks appearance
+    2. RAW/DOCUMENTARY STYLE: Not "cinematic" - prevents AI glossy look
+    3. STATIC CAMERA: For talking heads, locked-off camera preserves lip-sync
+    4. VOICE PROFILE: Extract and pass voice traits correctly
+    5. "Character says:" syntax for Veo lip-sync engine
     
     Args:
         dialogue: The dialogue line to speak
         language: Language for pronunciation
+        voice_profile: Full voice profile text
+        duration: Clip duration in seconds
+        facial_expression: Expression description
+        body_language: Body language description
+        delivery_style: How the line should be delivered
+        emotion: Emotional tone
+        redo_feedback: Priority feedback for redo attempts
         
     Returns:
         Formatted prompt string
     """
     dialogue = dialogue.strip().strip('"').strip("'")
     
-    return f"""Medium shot, static locked-off camera, sharp focus on subject. The subject in the frame speaks directly to camera with steady gaze with slight smile, upright posture, shoulders back. The character says in {language}, "{dialogue}" Voice: smooth - slight crispness on emphasis. clear and authoritative, confident emotion. Ambient noise: Complete silence, professional recording booth, no room ambiance. Style: Raw realistic footage, natural lighting, photorealistic. Speech timing: 0s to 7.0s, then silence. No subtitles, no text overlays, no captions, no watermarks. No background music, no laughter, no applause, no crowd sounds, no ambient noise. No morphing, no face distortion, no jerky movements. Only the speaker's isolated voice. (no subtitles)"""
+    # Defaults
+    if facial_expression is None:
+        facial_expression = "natural engaged expression"
+    if body_language is None:
+        body_language = "natural posture"
+    if delivery_style is None:
+        delivery_style = "natural conversational"
+    if emotion is None:
+        emotion = "neutral"
+    
+    # Calculate timing
+    speech_end_time = duration - 1.0
+    
+    # Extract voice traits from voice profile if provided
+    voice_texture = ""
+    voice_tone = ""
+    voice_accent = ""
+    voice_signature = ""
+    
+    if voice_profile:
+        lines = voice_profile.split('\n')
+        for line in lines:
+            line_lower = line.lower().strip()
+            line_clean = line.strip()
+            
+            # Extract texture (raspy, smooth, gravelly, etc.)
+            if 'texture:' in line_lower:
+                voice_texture = line_clean.split(':', 1)[1].strip() if ':' in line_clean else ""
+            elif 'quality:' in line_lower and not voice_texture:
+                voice_texture = line_clean.split(':', 1)[1].strip() if ':' in line_clean else ""
+            
+            # Extract tone
+            if 'tone:' in line_lower:
+                voice_tone = line_clean.split(':', 1)[1].strip() if ':' in line_clean else ""
+            
+            # Extract accent
+            if 'accent:' in line_lower:
+                accent_val = line_clean.split(':', 1)[1].strip() if ':' in line_clean else ""
+                if accent_val and 'none' not in accent_val.lower() and 'neutral' not in accent_val.lower():
+                    voice_accent = accent_val
+            
+            # Extract signature traits
+            if 'signature' in line_lower and 'trait' in line_lower:
+                voice_signature = line_clean.split(':', 1)[1].strip() if ':' in line_clean else ""
+    
+    # Build consolidated voice instruction
+    voice_parts = []
+    if voice_texture:
+        voice_parts.append(voice_texture)
+    if voice_tone:
+        voice_parts.append(voice_tone)
+    if voice_signature:
+        voice_parts.append(voice_signature)
+    if voice_accent:
+        voice_parts.append(f"accent: {voice_accent}")
+    
+    short_voice = ", ".join(voice_parts) if voice_parts else "natural voice"
+    
+    # Build prompt following Veo 3.1 official structure (same as veo_generator.py)
+    if voice_profile:
+        final_prompt = f"""=== VOICE PROFILE ===
+{voice_profile}
+===
+
+Medium shot, static locked-off camera, sharp focus on subject.
+
+The subject in the frame speaks directly to camera with {facial_expression}, {body_language}.
+
+The character says in {language}, "{dialogue}"
+
+Voice: {short_voice}. {delivery_style}, {emotion} emotion.
+
+Ambient noise: Complete silence, professional recording booth, no room ambiance.
+
+Style: Raw realistic footage, natural lighting, photorealistic. Speech timing: 0s to {speech_end_time:.1f}s, then silence.
+
+No subtitles, no text overlays, no captions, no watermarks. No background music, no laughter, no applause, no crowd sounds, no ambient noise. No morphing, no face distortion, no jerky movements. Only the speaker's isolated voice.
+
+(no subtitles)"""
+    else:
+        # Simpler format without voice profile section
+        final_prompt = f"""Medium shot, static locked-off camera, sharp focus on subject.
+
+The subject in the frame speaks directly to camera with {facial_expression}, {body_language}.
+
+The character says in {language}, "{dialogue}"
+
+Voice: {short_voice}. {delivery_style}, {emotion} emotion.
+
+Ambient noise: Complete silence, professional recording booth, no room ambiance.
+
+Style: Raw realistic footage, natural lighting, photorealistic. Speech timing: 0s to {speech_end_time:.1f}s, then silence.
+
+No subtitles, no text overlays, no captions, no watermarks. No background music, no laughter, no applause, no crowd sounds, no ambient noise. No morphing, no face distortion, no jerky movements. Only the speaker's isolated voice.
+
+(no subtitles)"""
+
+    # Add redo feedback at the top if present (same as veo_generator.py)
+    if redo_feedback:
+        final_prompt = f"""=== PRIORITY ===
+{redo_feedback}
+===
+
+{final_prompt}"""
+    
+    return final_prompt
 
 
-def clean_prompt_for_flow(prompt: str, dialogue: str, language: str = "English") -> str:
+def clean_prompt_for_flow(
+    prompt: str, 
+    dialogue: str, 
+    language: str = "English",
+    voice_profile: str = None,
+    duration: float = 8.0
+) -> str:
     """
     Clean an API-generated prompt for use with Flow UI.
     
@@ -103,6 +243,8 @@ def clean_prompt_for_flow(prompt: str, dialogue: str, language: str = "English")
         prompt: The API-generated prompt (may have markers)
         dialogue: The dialogue text (fallback if prompt is too broken)
         language: Language for the dialogue
+        voice_profile: Voice profile for prompt building
+        duration: Clip duration in seconds
         
     Returns:
         Clean prompt suitable for Flow
@@ -111,11 +253,11 @@ def clean_prompt_for_flow(prompt: str, dialogue: str, language: str = "English")
     # The API prompts seem to be causing "Failed Generation" errors
     # Uncomment below to restore API prompt cleaning
     print(f"[Flow] Using simple fallback prompt (API prompt bypassed for testing)", flush=True)
-    return get_prompt(dialogue, language)
+    return get_prompt(dialogue, language, voice_profile=voice_profile, duration=duration)
     
     # === Original cleaning logic (disabled for testing) ===
     # if not prompt:
-    #     return get_prompt(dialogue, language)
+    #     return get_prompt(dialogue, language, voice_profile=voice_profile, duration=duration)
     # 
     # # If prompt doesn't have our markers or voice profile hints, return as-is
     # has_markers = "===" in prompt or "---" in prompt
@@ -980,11 +1122,22 @@ class FlowBackend:
         
         # Use pre-built prompt from API engine if available
         if clip.prompt:
-            prompt = clean_prompt_for_flow(clip.prompt, clip.dialogue_text, language)
+            prompt = clean_prompt_for_flow(
+                clip.prompt, 
+                clip.dialogue_text, 
+                language,
+                voice_profile=clip.voice_profile,
+                duration=clip.duration
+            )
             print(f"[Flow] Cleaned API prompt for Flow ({len(prompt)} chars)", flush=True)
             print(f"[Flow] Prompt preview: {prompt[:150]}...", flush=True)
         else:
-            prompt = get_prompt(clip.dialogue_text, language)
+            prompt = get_prompt(
+                clip.dialogue_text, 
+                language,
+                voice_profile=clip.voice_profile,
+                duration=clip.duration
+            )
             print(f"[Flow] Using fallback prompt ({len(prompt)} chars)", flush=True)
         
         try:
