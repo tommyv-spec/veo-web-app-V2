@@ -1412,6 +1412,7 @@ async def create_job(
                 analyze_frame,
                 process_user_context,
                 get_default_voice_profile,
+                generate_voice_profile,
             )
             
             # Parse config for prompt generation
@@ -1455,8 +1456,22 @@ async def create_job(
                 except Exception as e:
                     print(f"[main.py] Frame analysis failed: {e}")
             
-            # Get voice profile
-            voice_profile = get_default_voice_profile(language, video_config.user_context)
+            # Generate voice profile using frame analysis (same as API jobs)
+            if video_config.use_openai_prompt_tuning and openai_key and frame_analysis:
+                try:
+                    print(f"[main.py] Generating voice profile from frame analysis...")
+                    voice_profile = generate_voice_profile(
+                        frame_analysis,
+                        language,
+                        user_context_enriched,
+                        openai_key
+                    )
+                    print(f"[main.py] Voice profile generated successfully")
+                except Exception as e:
+                    print(f"[main.py] Voice profile generation failed, using default: {e}")
+                    voice_profile = get_default_voice_profile(language, video_config.user_context)
+            else:
+                voice_profile = get_default_voice_profile(language, video_config.user_context)
             
             print(f"[main.py] DEBUG: voice_profile obtained, proceeding to frame assignment")
             print(f"[main.py] DEBUG: dialogue_list has {len(dialogue_list)} items")
@@ -4738,11 +4753,6 @@ async def local_worker_get_pending_job(
             "start_frame_url": f"{base_url}/api/local-worker/frames/{job.id}/{start_filename}" if start_filename else None,
             "end_frame_url": f"{base_url}/api/local-worker/frames/{job.id}/{end_filename}" if end_filename else None,
         }
-        
-        # DEBUG: Log prompt info
-        prompt_len = len(clip.prompt_text) if clip.prompt_text else 0
-        prompt_preview = clip.prompt_text[:100] if clip.prompt_text else "NONE"
-        print(f"[LocalWorker] Clip {clip.clip_index}: prompt_text length={prompt_len}, preview='{prompt_preview}...'", flush=True)
         
         clips_data.append(clip_data)
     
