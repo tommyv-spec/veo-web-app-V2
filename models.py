@@ -211,6 +211,10 @@ class Clip(Base):
     start_frame = Column(String(255), nullable=True)
     end_frame = Column(String(255), nullable=True)
     
+    # === Storyboard/Scene Mode Fields ===
+    clip_mode = Column(String(20), default="blend")  # 'blend' | 'continue' | 'fresh'
+    scene_index = Column(Integer, default=0)  # Which scene this clip belongs to
+    
     # Generation parameters (for regeneration)
     prompt_text = Column(Text, nullable=True)
     
@@ -436,6 +440,9 @@ def _run_migrations_postgresql(engine):
         ("jobs", "flow_needs_auth", "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS flow_needs_auth BOOLEAN DEFAULT FALSE"),
         ("clips", "flow_clip_id", "ALTER TABLE clips ADD COLUMN IF NOT EXISTS flow_clip_id TEXT"),
         ("clips", "output_url", "ALTER TABLE clips ADD COLUMN IF NOT EXISTS output_url TEXT"),
+        # Storyboard/Scene mode fields
+        ("clips", "clip_mode", "ALTER TABLE clips ADD COLUMN IF NOT EXISTS clip_mode TEXT DEFAULT 'blend'"),
+        ("clips", "scene_index", "ALTER TABLE clips ADD COLUMN IF NOT EXISTS scene_index INTEGER DEFAULT 0"),
     ]
     
     with engine.connect() as conn:
@@ -471,6 +478,9 @@ def _run_migrations_sqlite(engine):
         # Flow backend fields - clips table
         ("clips", "flow_clip_id", "ALTER TABLE clips ADD COLUMN flow_clip_id TEXT"),
         ("clips", "output_url", "ALTER TABLE clips ADD COLUMN output_url TEXT"),
+        # Storyboard/Scene mode fields
+        ("clips", "clip_mode", "ALTER TABLE clips ADD COLUMN clip_mode TEXT DEFAULT 'blend'"),
+        ("clips", "scene_index", "ALTER TABLE clips ADD COLUMN scene_index INTEGER DEFAULT 0"),
     ]
     
     with engine.connect() as conn:

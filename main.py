@@ -1694,6 +1694,8 @@ No subtitles, no text overlays. No background music. Only the speaker's voice.
                     start_frame=start_frame_key,
                     end_frame=end_frame_key,
                     prompt_text=prompt_text,
+                    clip_mode=clip_mode,  # Store for Flow worker continue mode
+                    scene_index=scene_index,  # Store for scene tracking
                 )
                 db.add(clip)
                 clips_created += 1
@@ -4752,6 +4754,9 @@ async def local_worker_get_pending_job(
             # Use proxy URLs instead of direct R2 presigned URLs
             "start_frame_url": f"{base_url}/api/local-worker/frames/{job.id}/{start_filename}" if start_filename else None,
             "end_frame_url": f"{base_url}/api/local-worker/frames/{job.id}/{end_filename}" if end_filename else None,
+            # Storyboard/Scene mode fields for continue mode support
+            "clip_mode": clip.clip_mode or "blend",
+            "scene_index": clip.scene_index or 0,
         }
         
         clips_data.append(clip_data)
@@ -4909,7 +4914,10 @@ async def local_worker_get_redo_clips(
             "flow_project_url": job.flow_project_url,
             "generation_attempt": clip.generation_attempt,
             "redo_reason": clip.redo_reason,
-            "claimed_by": clip.claimed_by_worker
+            "claimed_by": clip.claimed_by_worker,
+            # Storyboard/Scene mode fields for continue mode support
+            "clip_mode": clip.clip_mode or "blend",
+            "scene_index": clip.scene_index or 0,
         })
     
     return {"clips": clips_data}
@@ -5106,6 +5114,242 @@ async def local_worker_download_frame(
     except Exception as e:
         print(f"[LocalWorker] Frame download error: {e}", flush=True)
         raise HTTPException(status_code=404, detail=f"Frame not found: {filename}")
+
+
+class EnhanceFrameRequest(BaseModel):
+    """Request body for frame enhancement"""
+    frame_base64: str  # Base64 encoded extracted frame
+    original_frame_key: Optional[str] = None  # R2 key of original scene image for facial consistency
+    job_id: str  # Job ID for context and storage
+
+
+@app.post("/api/local-worker/enhance-frame")
+async def local_worker_enhance_frame(
+    request: EnhanceFrameRequest,
+    authorized: bool = Depends(verify_local_worker_key)
+):
+    """
+    Enhance an extracted video frame using Nano Banana Pro (Gemini 3 Pro Image).
+    
+    This endpoint:
+    1. Decodes the base64 frame
+    2. Optionally downloads the original scene image from R2 for facial consistency
+    3. Calls Gemini 3 Pro Image to upscale and fix facial features
+    4. Returns the enhanced frame as base64
+    
+    If no Gemini keys are available or enhancement fails, returns the original frame.
+    """
+    import base64
+    import tempfile
+    from pathlib import Path
+    from backends.storage import is_storage_configured, get_storage
+    
+    try:
+        # Decode the input frame
+        try:
+            frame_bytes = base64.b64decode(request.frame_base64)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid base64 frame data: {e}")
+        
+        # Save to temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
+            tmp.write(frame_bytes)
+            frame_path = Path(tmp.name)
+        
+        # Try to get original scene image for facial consistency
+        original_scene_path = None
+        if request.original_frame_key and is_storage_configured():
+            try:
+                storage = get_storage()
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as orig_tmp:
+                    original_scene_path = Path(orig_tmp.name)
+                storage.download_file(request.original_frame_key, str(original_scene_path))
+                print(f"[EnhanceFrame] Downloaded original scene image: {request.original_frame_key}", flush=True)
+            except Exception as e:
+                print(f"[EnhanceFrame] Could not download original scene image: {e}", flush=True)
+                original_scene_path = None
+        
+        # Try to enhance with Nano Banana Pro
+        enhanced_path = _enhance_frame_with_nano_banana(frame_path, original_scene_path)
+        
+        # Read the result (enhanced or original if enhancement failed)
+        with open(enhanced_path or frame_path, 'rb') as f:
+            result_bytes = f.read()
+        
+        # Clean up temp files
+        try:
+            frame_path.unlink()
+            if original_scene_path and original_scene_path.exists():
+                original_scene_path.unlink()
+            if enhanced_path and enhanced_path != frame_path and enhanced_path.exists():
+                enhanced_path.unlink()
+        except:
+            pass
+        
+        # Return as base64
+        result_base64 = base64.b64encode(result_bytes).decode('utf-8')
+        
+        return {
+            "success": True,
+            "enhanced": enhanced_path is not None,
+            "frame_base64": result_base64
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[EnhanceFrame] Error: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        # Return original frame on error
+        return {
+            "success": False,
+            "enhanced": False,
+            "frame_base64": request.frame_base64,
+            "error": str(e)
+        }
+
+
+def _enhance_frame_with_nano_banana(frame_path: Path, original_scene_image: Optional[Path] = None) -> Optional[Path]:
+    """
+    Enhance an extracted frame using Nano Banana Pro (Gemini 3 Pro Image).
+    Upscales and improves quality of the image.
+    
+    If original_scene_image is provided, also corrects facial features to match
+    the original person (fixes AI drift in facial appearance).
+    
+    Returns path to enhanced frame, or None if enhancement failed/unavailable.
+    """
+    try:
+        import google.genai as genai
+        from google.genai import types
+    except ImportError:
+        print("[EnhanceFrame] google-genai not installed, skipping enhancement", flush=True)
+        return None
+    
+    try:
+        # Get Gemini API keys
+        gemini_keys = []
+        gemini_keys_str = os.environ.get("GEMINI_API_KEYS", "")
+        if gemini_keys_str:
+            gemini_keys = [k.strip() for k in gemini_keys_str.split(",") if k.strip()]
+        
+        if not gemini_keys:
+            print("[EnhanceFrame] No Gemini API keys available for Nano Banana Pro enhancement", flush=True)
+            return None
+        
+        # Use first available key
+        api_key = gemini_keys[0]
+        client = genai.Client(api_key=api_key)
+        
+        # Read the extracted frame
+        with open(frame_path, 'rb') as f:
+            frame_bytes = f.read()
+        
+        # Determine mime type
+        suffix = frame_path.suffix.lower()
+        mime_type = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.webp': 'image/webp'
+        }.get(suffix, 'image/jpeg')
+        
+        print(f"[EnhanceFrame] Enhancing frame with Nano Banana Pro: {frame_path.name}", flush=True)
+        
+        # Build the prompt parts
+        parts = [
+            types.Part.from_bytes(data=frame_bytes, mime_type=mime_type),
+        ]
+        
+        # If we have original scene image, include it for facial consistency
+        if original_scene_image and original_scene_image.exists():
+            print(f"[EnhanceFrame] Including original scene image for facial consistency", flush=True)
+            
+            with open(original_scene_image, 'rb') as f:
+                original_bytes = f.read()
+            
+            original_suffix = original_scene_image.suffix.lower()
+            original_mime = {
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.png': 'image/png',
+                '.webp': 'image/webp'
+            }.get(original_suffix, 'image/jpeg')
+            
+            parts.append(types.Part.from_bytes(data=original_bytes, mime_type=original_mime))
+            
+            prompt_text = (
+                "The first image is an extracted video frame. The second image shows the original person. "
+                "Please enhance the first image by: "
+                "1) Upscaling to improve quality and sharpness "
+                "2) Correcting any facial features to match the original person in the second image "
+                "(fix any AI-generated drift in face shape, eyes, nose, mouth) "
+                "3) Maintaining the exact pose, lighting, and composition from the first image "
+                "Output only the enhanced image, no text."
+            )
+        else:
+            prompt_text = (
+                "Please enhance this image by upscaling to improve quality and sharpness. "
+                "Maintain the exact pose, lighting, and composition. "
+                "Output only the enhanced image, no text."
+            )
+        
+        parts.append(types.Part.from_text(text=prompt_text))
+        
+        # Call Gemini with retry logic for overload
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = client.models.generate_content(
+                    model="gemini-2.0-flash-exp-image-generation",
+                    contents=parts,
+                    config=types.GenerateContentConfig(
+                        response_modalities=['image', 'text'],
+                    )
+                )
+                break
+            except Exception as e:
+                if "overloaded" in str(e).lower() or "503" in str(e) or "429" in str(e):
+                    import time
+                    wait_time = (attempt + 1) * 5
+                    print(f"[EnhanceFrame] Gemini overloaded, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})", flush=True)
+                    time.sleep(wait_time)
+                    if attempt == max_retries - 1:
+                        print(f"[EnhanceFrame] Gemini still overloaded after {max_retries} attempts, using original frame", flush=True)
+                        return None
+                else:
+                    raise
+        
+        if not response or not response.candidates:
+            print("[EnhanceFrame] No response received, using original frame", flush=True)
+            return None
+        
+        # Extract the image from response
+        for part in response.candidates[0].content.parts:
+            if hasattr(part, 'inline_data') and part.inline_data:
+                # Save enhanced frame
+                enhanced_path = frame_path.parent / f"{frame_path.stem}_enhanced.png"
+                
+                import base64
+                image_data = part.inline_data.data
+                if isinstance(image_data, str):
+                    image_data = base64.b64decode(image_data)
+                
+                with open(enhanced_path, 'wb') as f:
+                    f.write(image_data)
+                
+                print(f"[EnhanceFrame] Enhanced frame saved: {enhanced_path.name}", flush=True)
+                return enhanced_path
+        
+        print("[EnhanceFrame] Gemini did not return an image, using original frame", flush=True)
+        return None
+        
+    except Exception as e:
+        print(f"[EnhanceFrame] Enhancement error: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return None
 
 
 @app.post("/api/local-worker/jobs/{job_id}/upload-video/{clip_index}")
