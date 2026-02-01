@@ -5352,6 +5352,60 @@ def _enhance_frame_with_nano_banana(frame_path: Path, original_scene_image: Opti
         return None
 
 
+@app.get("/api/local-worker/clips/{clip_id}/approval-status")
+async def local_worker_get_clip_approval_status(
+    clip_id: int,
+    db: DBSession = Depends(get_db_session),
+    authorized: bool = Depends(verify_local_worker_key)
+):
+    """
+    Get clip approval status for continue mode processing.
+    
+    Returns:
+        - approval_status: 'pending_review', 'approved', 'rejected', 'max_attempts'
+        - selected_variant: Which variant the user selected (1-based)
+        - output_url: URL of the selected variant's video (for downloading)
+        - has_video: Whether any video has been generated
+    """
+    clip = db.query(Clip).filter(Clip.id == clip_id).first()
+    if not clip:
+        raise HTTPException(status_code=404, detail="Clip not found")
+    
+    # Get the job for video URL construction
+    job = db.query(Job).filter(Job.id == clip.job_id).first()
+    
+    # Parse versions to find the selected variant's video
+    versions = []
+    if clip.versions_json:
+        try:
+            versions = json.loads(clip.versions_json) if isinstance(clip.versions_json, str) else clip.versions_json
+        except:
+            versions = []
+    
+    selected_variant = clip.selected_variant or 1
+    selected_video_url = None
+    
+    # Find the video URL for the selected variant
+    for v in versions:
+        if v.get('attempt') == 1 and v.get('variant') == selected_variant:
+            selected_video_url = v.get('url')
+            break
+        # Fallback: if no variant field, use the attempt number
+        if v.get('attempt') == selected_variant and not v.get('variant'):
+            selected_video_url = v.get('url')
+            break
+    
+    return {
+        "clip_id": clip.id,
+        "clip_index": clip.clip_index,
+        "approval_status": clip.approval_status or "pending_review",
+        "selected_variant": selected_variant,
+        "output_url": selected_video_url or clip.output_url,
+        "has_video": clip.status == "completed" or bool(versions),
+        "status": clip.status
+    }
+
+
 @app.post("/api/local-worker/jobs/{job_id}/upload-video/{clip_index}")
 async def local_worker_upload_video(
     job_id: str,
