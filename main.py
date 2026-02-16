@@ -4647,6 +4647,7 @@ async def local_worker_health():
 async def local_worker_get_pending_job(
     request: Request,
     worker_id: Optional[str] = Query(None, description="Worker ID for claiming"),
+    exclude: Optional[str] = Query(None, description="Comma-separated job IDs to exclude (already being processed)"),
     db: DBSession = Depends(get_db_session),
     authorized: bool = Depends(verify_local_worker_key)
 ):
@@ -4654,8 +4655,12 @@ async def local_worker_get_pending_job(
     
     If worker_id is provided, atomically claims the job for that worker.
     Jobs claimed more than 10 minutes ago without completion are released.
+    Pass exclude=id1,id2,... to skip jobs already being processed by this worker.
     """
     from sqlalchemy import or_, and_
+    
+    # Parse exclude list
+    exclude_ids = [eid.strip() for eid in exclude.split(",") if eid.strip()] if exclude else []
     
     # Release stale claims (claimed > 10 minutes ago and not started)
     claim_timeout = datetime.utcnow() - timedelta(minutes=10)
@@ -4676,15 +4681,22 @@ async def local_worker_get_pending_job(
     
     # Build query for available jobs
     # Either: unclaimed, OR claimed by this same worker
+    # Exclude any jobs the worker is already processing
     if worker_id:
-        job = db.query(Job).filter(
+        query = db.query(Job).filter(
             Job.backend == 'flow',
             Job.status.in_(['pending', 'queued_for_flow']),
             or_(
                 Job.claimed_by_worker.is_(None),
                 Job.claimed_by_worker == worker_id
             )
-        ).order_by(Job.created_at.asc()).first()
+        )
+        
+        # Exclude jobs already being processed
+        if exclude_ids:
+            query = query.filter(Job.id.notin_(exclude_ids))
+        
+        job = query.order_by(Job.created_at.asc()).first()
         
         if job and job.claimed_by_worker != worker_id:
             # Claim it
@@ -4694,11 +4706,16 @@ async def local_worker_get_pending_job(
             print(f"[Worker] Job {job.id[:8]} claimed by {worker_id}", flush=True)
     else:
         # No worker_id - just get unclaimed (legacy behavior)
-        job = db.query(Job).filter(
+        query = db.query(Job).filter(
             Job.backend == 'flow',
             Job.status.in_(['pending', 'queued_for_flow']),
             Job.claimed_by_worker.is_(None)
-        ).order_by(Job.created_at.asc()).first()
+        )
+        
+        if exclude_ids:
+            query = query.filter(Job.id.notin_(exclude_ids))
+        
+        job = query.order_by(Job.created_at.asc()).first()
     
     if not job:
         return {"job": None}
