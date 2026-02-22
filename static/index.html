@@ -701,6 +701,105 @@
         @media (max-width: 600px) {
             .tutorial-footer { flex-direction: column; gap: 12px; }
         }
+        
+        /* ====== Onboarding Sidebar ====== */
+        .onboarding-sidebar {
+            position: fixed; top: 64px; right: 0; bottom: 0; width: 370px; z-index: 9000;
+            background: var(--bg-surface); border-left: 1px solid var(--border-color);
+            display: flex; flex-direction: column; transform: translateX(100%);
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: -4px 0 24px rgba(0,0,0,0.3);
+        }
+        .onboarding-sidebar.open { transform: translateX(0); }
+        .onboarding-sidebar.open ~ .main-content,
+        body.onboarding-active .main-content { margin-right: 370px; transition: margin-right 0.35s cubic-bezier(0.4, 0, 0.2, 1); }
+        .ob-header {
+            padding: 16px 18px; border-bottom: 1px solid var(--border-color);
+            background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.1));
+            display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+        }
+        .ob-header h3 { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; margin: 0; }
+        .ob-header .ob-step-label { font-size: 11px; color: var(--text-muted); }
+        .ob-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 18px; padding: 4px 8px; border-radius: 6px; transition: all 0.2s; }
+        .ob-close:hover { background: var(--bg-elevated); color: var(--text-primary); }
+        .ob-progress { height: 3px; background: var(--bg-elevated); flex-shrink: 0; }
+        .ob-progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width 0.4s ease-out; }
+        .ob-body { flex: 1; overflow-y: auto; padding: 20px 18px; }
+        .ob-step-num {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 28px; height: 28px; border-radius: 8px; font-size: 13px; font-weight: 700;
+            background: linear-gradient(135deg, var(--accent), var(--accent2)); color: white;
+            margin-bottom: 12px;
+        }
+        .ob-step-title { font-size: 17px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; line-height: 1.3; }
+        .ob-step-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.65; margin-bottom: 16px; }
+        .ob-step-desc strong { color: var(--text-primary); }
+        .ob-step-desc a { color: #818CF8; text-decoration: none; }
+        .ob-step-desc a:hover { text-decoration: underline; }
+        .ob-step-list { list-style: none; padding: 0; margin: 0 0 16px; counter-reset: oblist; }
+        .ob-step-list li {
+            counter-increment: oblist; padding: 8px 0 8px 32px; position: relative;
+            font-size: 13px; color: var(--text-secondary); line-height: 1.5;
+            border-bottom: 1px solid rgba(71,85,105,0.15);
+        }
+        .ob-step-list li::before {
+            content: counter(oblist); position: absolute; left: 0; top: 8px;
+            width: 22px; height: 22px; background: var(--bg-elevated); border: 1px solid var(--border-color);
+            border-radius: 6px; display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 11px; color: var(--accent);
+        }
+        .ob-tip {
+            background: rgba(16,185,129,0.08); border-left: 3px solid var(--success);
+            border-radius: 0 8px 8px 0; padding: 10px 14px; margin: 12px 0;
+            font-size: 12px; color: var(--text-secondary); line-height: 1.55;
+        }
+        .ob-tip strong { color: var(--success); }
+        .ob-warn {
+            background: rgba(239,68,68,0.08); border-left: 3px solid var(--error);
+            border-radius: 0 8px 8px 0; padding: 10px 14px; margin: 12px 0;
+            font-size: 12px; color: var(--text-secondary); line-height: 1.55;
+        }
+        .ob-warn strong { color: var(--error); }
+        .ob-status {
+            display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+            border-radius: 8px; margin: 14px 0; font-size: 13px; font-weight: 600;
+        }
+        .ob-status.waiting { background: rgba(99,102,241,0.1); color: var(--accent); }
+        .ob-status.waiting .ob-spinner { display: inline-block; animation: spin 1.2s linear infinite; }
+        .ob-status.done { background: rgba(16,185,129,0.12); color: var(--success); }
+        .ob-footer {
+            padding: 14px 18px; border-top: 1px solid var(--border-color);
+            display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; background: var(--bg-surface);
+        }
+        .ob-nav { display: flex; gap: 8px; }
+        .ob-nav .btn { flex: 1; font-size: 13px; padding: 9px 14px; }
+        .ob-skip { text-align: center; }
+        .ob-skip button {
+            background: none; border: none; color: var(--text-muted); font-size: 11px;
+            cursor: pointer; padding: 4px 8px; transition: color 0.2s;
+        }
+        .ob-skip button:hover { color: var(--text-primary); }
+        /* Toggle tab on the left edge when sidebar is closed */
+        .ob-toggle-tab {
+            position: fixed; right: 0; top: 50%; transform: translateY(-50%);
+            background: var(--accent); color: white; border: none; cursor: pointer;
+            padding: 12px 6px; border-radius: 8px 0 0 8px; font-size: 12px; font-weight: 700;
+            writing-mode: vertical-rl; text-orientation: mixed; z-index: 8999;
+            box-shadow: -2px 0 12px rgba(99,102,241,0.3); transition: all 0.3s;
+            display: none;
+        }
+        .ob-toggle-tab:hover { padding-right: 10px; background: var(--accent2); }
+        .ob-toggle-tab.visible { display: block; }
+        .onboarding-sidebar.open + .ob-toggle-tab { display: none; }
+        @media (max-width: 900px) {
+            .onboarding-sidebar { width: 100%; top: auto; bottom: 0; height: 45vh; min-height: 280px;
+                transform: translateY(100%); border-left: none; border-top: 1px solid var(--border-color); }
+            .onboarding-sidebar.open { transform: translateY(0); }
+            .onboarding-sidebar.open ~ .main-content,
+            body.onboarding-active .main-content { margin-right: 0; margin-bottom: 45vh; }
+            .ob-toggle-tab { writing-mode: horizontal-tb; right: 50%; top: auto; bottom: 0;
+                transform: translateX(50%); border-radius: 8px 8px 0 0; padding: 6px 16px; }
+        }
     </style>
 </head>
 <body>
@@ -757,7 +856,8 @@
                     <div class="api-keys-info">
                         <strong>Your own Gemini API keys</strong><br>
                         Add your own keys to use your quota. If you don't add any, server keys will be used.<br>
-                        <a href="https://aistudio.google.com/apikey" target="_blank">Get API keys from Google AI Studio →</a>
+                        <a href="https://console.cloud.google.com" target="_blank">Get API keys from Google Cloud Console →</a>
+                        <br><span style="font-size:11px;opacity:0.7;">Create Project → Enable "Generative Language API" → Credentials → Create API Key</span>
                     </div>
                     
                     <!-- Summary of key statuses -->
@@ -791,6 +891,30 @@
                 </div>
             </div>
         </div>
+        
+        <!-- Onboarding Sidebar (reactive, step-by-step) -->
+        <div class="onboarding-sidebar" id="obSidebar">
+            <div class="ob-header">
+                <h3>📖 <span id="obHeaderTitle">Getting Started</span></h3>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <span class="ob-step-label" id="obStepLabel">Step 1 of 7</span>
+                    <button class="ob-close" onclick="obMinimize()" title="Minimize">−</button>
+                </div>
+            </div>
+            <div class="ob-progress"><div class="ob-progress-fill" id="obProgressFill" style="width:0%"></div></div>
+            <div class="ob-body" id="obBody">
+                <!-- Filled dynamically by JS -->
+            </div>
+            <div class="ob-footer">
+                <div class="ob-nav" id="obNav">
+                    <!-- Filled dynamically -->
+                </div>
+                <div class="ob-skip">
+                    <button onclick="obDismiss()">Skip tutorial — I know what I'm doing</button>
+                </div>
+            </div>
+        </div>
+        <button class="ob-toggle-tab" id="obToggleTab" onclick="obReopen()">📖 Tutorial</button>
         
         <!-- Tutorial Overlay (loads tutorial.html via iframe) -->
         <div class="tutorial-overlay" id="tutorialOverlay">
@@ -1162,9 +1286,10 @@ Example: A realistic vertical video of a professional presenter speaking directl
                 const data = await response.json();
                 currentUser = data.user;
                 showUserInfo(currentUser);
-                // Show tutorial on first visit
+                // Show tutorial on first visit + start onboarding
                 setTimeout(() => {
                     if (typeof checkShowTutorial === 'function') checkShowTutorial();
+                    if (typeof checkShowOnboarding === 'function') checkShowOnboarding();
                 }, 600);
                 return true;
             } catch (error) {
@@ -6180,6 +6305,457 @@ Example: A realistic vertical video of a professional presenter speaking directl
                 if (localStorage.getItem(TUTORIAL_STORAGE_KEY) === 'true') return;
             } catch(e) {}
             openTutorial();
+        }
+        
+        // =============================================================================
+        // Onboarding Sidebar — Reactive Step-by-Step Guide
+        // =============================================================================
+        const OB_STORAGE_KEY = 'veo_onboarding_state';
+        const OB_DISMISSED_KEY = 'veo_onboarding_dismissed';
+        let obCurrentStep = null;
+        let obPollTimer = null;
+        let obApiKeyCount = 0;
+        
+        // Step definitions — each step has an id, condition checker, and content generator
+        const OB_STEPS = [
+            {
+                id: 'api_keys',
+                title: '🔑 Add Your API Keys',
+                check: () => obApiKeyCount > 0,
+                content: () => `
+                    <div class="ob-step-num">1</div>
+                    <div class="ob-step-title">Add Your Gemini API Keys</div>
+                    <div class="ob-warn"><strong>⚠️ Required:</strong> The platform won't generate videos without at least one valid API key.</div>
+                    <div class="ob-step-desc">
+                        <p>You need API keys from <strong>Google Cloud Console</strong>. Here's how:</p>
+                    </div>
+                    <ol class="ob-step-list">
+                        <li>Go to <a href="https://console.cloud.google.com" target="_blank">console.cloud.google.com</a> → click <strong>"Start for Free"</strong></li>
+                        <li><strong>Create a Project</strong> (any name, e.g. "My Project 1")</li>
+                        <li>Go to <strong>APIs & Services → Library</strong> → search <strong>"Generative Language API"</strong> → click <strong>Enable</strong></li>
+                        <li>Go to <strong>APIs & Services → Credentials</strong> → click <strong>"+ Create Credentials" → "API Key"</strong></li>
+                        <li>Copy the key (starts with <code style="background:var(--bg-elevated);padding:2px 6px;border-radius:4px;font-size:12px;color:#FDE68A;">AIzaSy...</code>)</li>
+                        <li>Click your <strong>profile avatar</strong> (top-right) → <strong>"🔑 API Keys"</strong> → paste it</li>
+                    </ol>
+                    <div class="ob-tip"><strong>💡 Tip:</strong> Create 1 key per project, max 2 projects per Gmail. Each project has independent rate limits.</div>
+                    <div class="ob-status waiting" id="obKeyStatus">
+                        <span class="ob-spinner">⏳</span> Waiting for you to add an API key...
+                    </div>
+                `,
+            },
+            {
+                id: 'upload_images',
+                title: '📤 Upload Images',
+                check: () => uploadedImages.length > 0,
+                content: () => `
+                    <div class="ob-step-num">2</div>
+                    <div class="ob-step-title">Upload Your Images</div>
+                    <div class="ob-step-desc">
+                        <p><strong>Drag & drop</strong> images onto the upload area on the left, or click to browse. Accepted formats: PNG, JPG, WebP.</p>
+                        <p>The number of images you upload determines the editing mode:</p>
+                    </div>
+                    <ol class="ob-step-list">
+                        <li><strong>1 image</strong> → Simple Mode (same image for all clips — perfect for monologues)</li>
+                        <li><strong>2+ images</strong> → Multi-scene mode with Auto-Cycle or Storyboard options</li>
+                    </ol>
+                    <div class="ob-tip"><strong>💡 Tip:</strong> Use clear, well-lit, front-facing photos. Clean backgrounds help the AI focus on the subject.</div>
+                    <div class="ob-status waiting">
+                        <span class="ob-spinner">⏳</span> Waiting for image upload...
+                    </div>
+                `,
+            },
+            {
+                id: 'mode_single',
+                title: '⚙️ Single Image Mode',
+                condition: () => uploadedImages.length === 1,
+                check: () => {
+                    const ta = document.getElementById('dialogueScript');
+                    return ta && ta.value.trim().length > 10;
+                },
+                content: () => `
+                    <div class="ob-step-num">3</div>
+                    <div class="ob-step-title">Simple Mode — Configure & Write</div>
+                    <div class="ob-step-desc">
+                        <p>You uploaded <strong>1 image</strong>, so you're in <strong>Simple Mode</strong>. The same image will be used for every clip.</p>
+                        <p>Now do two things:</p>
+                    </div>
+                    <ol class="ob-step-list">
+                        <li><strong>Configure settings</strong> — Choose language, duration (8s recommended), aspect ratio, and toggle Interpolation ON for smooth motion</li>
+                        <li><strong>Write your dialogue</strong> — Type or paste your script in the "Dialogue Script" box. With Auto-split ON, the platform will break long text into ~8-second clips automatically</li>
+                    </ol>
+                    <div class="ob-tip"><strong>💡 Tip:</strong> Use natural, conversational language. Let Auto-split handle line breaks first, then fine-tune.</div>
+                    <div class="ob-status waiting">
+                        <span class="ob-spinner">⏳</span> Write your dialogue script to continue...
+                    </div>
+                `,
+            },
+            {
+                id: 'mode_autocycle',
+                title: '🔄 Auto-Cycle Mode',
+                condition: () => uploadedImages.length >= 2 && editorMode === 'auto',
+                check: () => {
+                    const lines = getDialogueLines();
+                    return lines && lines.length > 0 && lines[0].trim().length > 5;
+                },
+                content: () => `
+                    <div class="ob-step-num">3</div>
+                    <div class="ob-step-title">Auto-Cycle Mode — Multi-Scene</div>
+                    <div class="ob-step-desc">
+                        <p>You uploaded <strong>${uploadedImages.length} images</strong> in <strong>Auto-Cycle</strong> mode. Images will rotate through your clips round-robin:</p>
+                        <p>Clip 1 → Image 1, Clip 2 → Image 2, ${uploadedImages.length > 2 ? 'Clip 3 → Image 3, ' : ''}then back to Image 1, and so on.</p>
+                    </div>
+                    <ol class="ob-step-list">
+                        <li><strong>Configure settings</strong> — Use 8s duration + Interpolation ON for smooth transitions between images</li>
+                        <li><strong>Choose generation mode</strong> — Smart (recommended), Fast, or Safe</li>
+                        <li><strong>Write your dialogue</strong> — The script will auto-split across clips. Each clip gets the next image in rotation.</li>
+                    </ol>
+                    <div class="ob-tip"><strong>💡 Tip:</strong> You can switch to <strong>Storyboard</strong> mode (top-right of script editor) for manual scene control.</div>
+                    <div class="ob-status waiting">
+                        <span class="ob-spinner">⏳</span> Write your dialogue script to continue...
+                    </div>
+                `,
+            },
+            {
+                id: 'mode_storyboard',
+                title: '🎬 Storyboard Mode',
+                condition: () => uploadedImages.length >= 2 && editorMode === 'storyboard',
+                check: () => {
+                    const lines = getDialogueLines();
+                    return lines && lines.length > 0 && lines[0].trim().length > 5;
+                },
+                content: () => `
+                    <div class="ob-step-num">3</div>
+                    <div class="ob-step-title">Storyboard Mode — Full Control</div>
+                    <div class="ob-step-desc">
+                        <p>You're in <strong>Storyboard</strong> mode with <strong>${uploadedImages.length} images</strong>. You have full control over scenes, transitions, and clip behavior.</p>
+                    </div>
+                    <ol class="ob-step-list">
+                        <li><strong>Drag images</strong> from the left sidebar into the script to create scene breaks</li>
+                        <li><strong>Choose clip mode per scene:</strong><br>
+                            <span style="background:#6366f1;color:white;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;">BLEND</span> starts from original photo each time<br>
+                            <span style="background:#10b981;color:white;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;">CONTINUE</span> picks up from previous clip's last frame<br>
+                            <span style="background:#f59e0b;color:white;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;">FRESH</span> standalone clips, no transitions
+                        </li>
+                        <li><strong>Set transitions between scenes:</strong><br>
+                            <span style="color:#818CF8;font-weight:600;">🎬 BLEND TO</span> = smooth morph to next scene<br>
+                            <span style="color:#EF4444;font-weight:600;">✂️ CUT TO</span> = hard instant switch
+                        </li>
+                        <li><strong>Write dialogue</strong> within each scene block</li>
+                    </ol>
+                    <div class="ob-tip"><strong>💡 Tip:</strong> BLEND mode + BLEND TO transitions give the most cinematic results. Use CUT TO when switching between very different subjects.</div>
+                    <div class="ob-status waiting">
+                        <span class="ob-spinner">⏳</span> Set up your scenes and write dialogue...
+                    </div>
+                `,
+            },
+            {
+                id: 'generate',
+                title: '🚀 Generate Video',
+                check: () => selectedJobId != null,
+                content: () => `
+                    <div class="ob-step-num">4</div>
+                    <div class="ob-step-title">Start Generation</div>
+                    <div class="ob-step-desc">
+                        <p>Everything is set up! Click the <strong>🚀 Start Generation</strong> button at the bottom of the settings panel.</p>
+                        <p>The platform will:</p>
+                    </div>
+                    <ol class="ob-step-list">
+                        <li>Validate your inputs (images, script, settings)</li>
+                        <li>Upload frames to cloud storage</li>
+                        <li>Generate AI prompts for each clip (if enabled)</li>
+                        <li>Start processing clips — each takes about 1–3 minutes</li>
+                    </ol>
+                    <div class="ob-tip"><strong>💡 Tip:</strong> Clips process in parallel. A 10-clip job finishes much faster than 10× a single clip.</div>
+                    <div class="ob-status waiting">
+                        <span class="ob-spinner">⏳</span> Click "Start Generation" to begin...
+                    </div>
+                `,
+            },
+            {
+                id: 'review',
+                title: '✅ Review Clips',
+                check: () => {
+                    const cards = document.querySelectorAll('.clip-card.clip-approved');
+                    return cards.length > 0;
+                },
+                content: () => `
+                    <div class="ob-step-num">5</div>
+                    <div class="ob-step-title">Review & Approve Your Clips</div>
+                    <div class="ob-step-desc">
+                        <p>Clips appear in the right panel as they complete. Watch each one and decide:</p>
+                    </div>
+                    <ol class="ob-step-list">
+                        <li><strong>✓ Approve</strong> — Looks good! This clip will be included in the final video</li>
+                        <li><strong>↻ Redo</strong> — Not great — regenerate a new version (up to 5 retries). Browse variants with ◀ ▶</li>
+                        <li><strong>🗑 Delete</strong> — Remove this clip entirely</li>
+                    </ol>
+                    <div class="ob-tip"><strong>💡 Tip:</strong> Don't wait for all clips to finish. Approve good ones immediately, Redo bad ones — they process alongside the remaining clips.</div>
+                    <div class="ob-status waiting">
+                        <span class="ob-spinner">⏳</span> Approve at least one clip to continue...
+                    </div>
+                `,
+            },
+            {
+                id: 'export',
+                title: '📥 Export',
+                check: () => false, // Terminal step — user decides when done
+                content: () => `
+                    <div class="ob-step-num">6</div>
+                    <div class="ob-step-title">Export Your Final Video</div>
+                    <div class="ob-step-desc">
+                        <p>Once you've approved all the clips you want, you have two export options:</p>
+                    </div>
+                    <ol class="ob-step-list">
+                        <li><strong>📥 Download All</strong> — Each approved clip as a separate MP4 file</li>
+                        <li><strong>✂️ Export Final</strong> — Merges all approved clips into one stitched video with optional audio enhancement (noise removal, loudness normalization)</li>
+                    </ol>
+                    <div class="ob-step-desc" style="margin-top:12px;">
+                        <p><strong>Optional: Voice Swap</strong> — After exporting, click 🎙️ Voice Swap to replace the AI voice with a cloned real voice using OpenVoice or ElevenLabs.</p>
+                    </div>
+                    <div class="ob-status done">
+                        ✅ You've completed the tutorial! You're ready to create amazing videos.
+                    </div>
+                `,
+            },
+        ];
+        
+        // Helper: get the active step sequence based on current app state
+        function obGetActiveSteps() {
+            return OB_STEPS.filter(s => !s.condition || s.condition());
+        }
+        
+        // Helper: find current step index in the active sequence
+        function obGetCurrentIndex() {
+            const steps = obGetActiveSteps();
+            const idx = steps.findIndex(s => s.id === obCurrentStep);
+            return idx >= 0 ? idx : 0;
+        }
+        
+        function obGetDialogueLines() {
+            // Try to use the global getDialogueLines if available
+            if (typeof getDialogueLines === 'function') {
+                try { return getDialogueLines(); } catch(e) {}
+            }
+            const ta = document.getElementById('dialogueScript');
+            if (!ta) return [];
+            return ta.value.split('\n').filter(l => l.trim());
+        }
+        
+        // Render the current step
+        function obRender() {
+            const steps = obGetActiveSteps();
+            const idx = obGetCurrentIndex();
+            const step = steps[idx];
+            if (!step) return;
+            
+            // Update header
+            document.getElementById('obHeaderTitle').textContent = step.title;
+            document.getElementById('obStepLabel').textContent = `Step ${idx + 1} of ${steps.length}`;
+            
+            // Update progress
+            const pct = Math.round(((idx) / steps.length) * 100);
+            document.getElementById('obProgressFill').style.width = pct + '%';
+            
+            // Update body
+            document.getElementById('obBody').innerHTML = step.content();
+            
+            // Update nav buttons
+            const nav = document.getElementById('obNav');
+            const isFirst = idx === 0;
+            const isLast = idx === steps.length - 1;
+            
+            if (isLast) {
+                nav.innerHTML = `
+                    <button class="btn btn-secondary" onclick="obGoBack()">← Back</button>
+                    <button class="btn btn-primary" onclick="obFinish()" style="background:linear-gradient(135deg,var(--accent),var(--accent2));">🎉 Finish Tutorial</button>
+                `;
+            } else {
+                nav.innerHTML = `
+                    ${!isFirst ? '<button class="btn btn-secondary" onclick="obGoBack()">← Back</button>' : '<div></div>'}
+                    <button class="btn btn-secondary" onclick="obSkipStep()">Skip →</button>
+                `;
+            }
+            
+            // Save state
+            obSaveState();
+        }
+        
+        // Check if current step is completed → auto-advance
+        function obPoll() {
+            const steps = obGetActiveSteps();
+            const idx = obGetCurrentIndex();
+            const step = steps[idx];
+            if (!step) return;
+            
+            // Check API key count (async)
+            if (step.id === 'api_keys') {
+                obCheckApiKeys();
+            }
+            
+            // Check step branching — if mode changed, the step sequence changes
+            // Re-evaluate which step we should be on
+            const newSteps = obGetActiveSteps();
+            const currentInNew = newSteps.findIndex(s => s.id === obCurrentStep);
+            if (currentInNew < 0) {
+                // Current step is no longer in the sequence (mode changed) — find the right one
+                // Go to the first incomplete step
+                for (const s of newSteps) {
+                    if (!s.check()) {
+                        obCurrentStep = s.id;
+                        obRender();
+                        return;
+                    }
+                }
+            }
+            
+            if (step.check()) {
+                // Step completed! Update status indicator
+                const statusEl = document.querySelector('#obBody .ob-status');
+                if (statusEl && !statusEl.classList.contains('done')) {
+                    statusEl.className = 'ob-status done';
+                    statusEl.innerHTML = '✅ Done! Moving to next step...';
+                    
+                    // Auto-advance after a brief pause
+                    setTimeout(() => {
+                        const nextIdx = idx + 1;
+                        if (nextIdx < newSteps.length) {
+                            obCurrentStep = newSteps[nextIdx].id;
+                            obRender();
+                        }
+                    }, 1200);
+                }
+            }
+        }
+        
+        async function obCheckApiKeys() {
+            try {
+                const r = await fetch('/api/user/keys');
+                if (r.ok) {
+                    const data = await r.json();
+                    const keys = data.keys || data || [];
+                    obApiKeyCount = Array.isArray(keys) ? keys.length : 0;
+                }
+            } catch(e) { /* ignore */ }
+        }
+        
+        function obGoBack() {
+            const steps = obGetActiveSteps();
+            const idx = obGetCurrentIndex();
+            if (idx > 0) {
+                obCurrentStep = steps[idx - 1].id;
+                obRender();
+            }
+        }
+        
+        function obSkipStep() {
+            const steps = obGetActiveSteps();
+            const idx = obGetCurrentIndex();
+            if (idx < steps.length - 1) {
+                obCurrentStep = steps[idx + 1].id;
+                obRender();
+            }
+        }
+        
+        function obFinish() {
+            obDismiss();
+        }
+        
+        function obMinimize() {
+            const sidebar = document.getElementById('obSidebar');
+            sidebar.classList.remove('open');
+            document.body.classList.remove('onboarding-active');
+            document.getElementById('obToggleTab').classList.add('visible');
+            obSaveState();
+        }
+        
+        function obReopen() {
+            const sidebar = document.getElementById('obSidebar');
+            sidebar.classList.add('open');
+            document.body.classList.add('onboarding-active');
+            document.getElementById('obToggleTab').classList.remove('visible');
+            obRender();
+            obSaveState();
+        }
+        
+        function obDismiss() {
+            const sidebar = document.getElementById('obSidebar');
+            sidebar.classList.remove('open');
+            document.body.classList.remove('onboarding-active');
+            document.getElementById('obToggleTab').classList.remove('visible');
+            if (obPollTimer) { clearInterval(obPollTimer); obPollTimer = null; }
+            try { localStorage.setItem(OB_DISMISSED_KEY, 'true'); } catch(e) {}
+        }
+        
+        function obSaveState() {
+            try {
+                localStorage.setItem(OB_STORAGE_KEY, JSON.stringify({
+                    step: obCurrentStep,
+                    minimized: !document.getElementById('obSidebar').classList.contains('open')
+                }));
+            } catch(e) {}
+        }
+        
+        function obLoadState() {
+            try {
+                const raw = localStorage.getItem(OB_STORAGE_KEY);
+                if (raw) return JSON.parse(raw);
+            } catch(e) {}
+            return null;
+        }
+        
+        // Start the onboarding system
+        function obStart() {
+            // Check if dismissed
+            try {
+                if (localStorage.getItem(OB_DISMISSED_KEY) === 'true') return;
+            } catch(e) {}
+            
+            // Load saved state or start fresh
+            const saved = obLoadState();
+            if (saved && saved.step) {
+                obCurrentStep = saved.step;
+                // Validate the step still exists
+                const allIds = OB_STEPS.map(s => s.id);
+                if (!allIds.includes(obCurrentStep)) obCurrentStep = OB_STEPS[0].id;
+            } else {
+                obCurrentStep = OB_STEPS[0].id;
+            }
+            
+            // Find the first incomplete step (skip already completed ones)
+            const steps = obGetActiveSteps();
+            let foundIncomplete = false;
+            for (const s of steps) {
+                if (!s.check()) {
+                    obCurrentStep = s.id;
+                    foundIncomplete = true;
+                    break;
+                }
+            }
+            if (!foundIncomplete) {
+                // Everything is done — don't show
+                return;
+            }
+            
+            // Show sidebar (or minimized tab)
+            if (saved && saved.minimized) {
+                document.getElementById('obToggleTab').classList.add('visible');
+            } else {
+                document.getElementById('obSidebar').classList.add('open');
+                document.body.classList.add('onboarding-active');
+            }
+            
+            obRender();
+            
+            // Start polling
+            obPollTimer = setInterval(obPoll, 1500);
+        }
+        
+        // Hook into checkAuth — start onboarding after successful login
+        // (the existing checkAuth already calls checkShowTutorial, we piggyback on that timing)
+        function checkShowOnboarding() {
+            setTimeout(() => {
+                if (typeof obStart === 'function') obStart();
+            }, 800);
         }
     </script>
 </body>
