@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Veo 3.1 Video Generator — Complete User Guide</title>
+<style>
+  :root {
+    --bg: #0F172A;
+    --surface: #1E293B;
+    --elevated: #334155;
+    --border: #475569;
+    --accent: #6366F1;
+    --accent2: #8B5CF6;
+    --text: #F8FAFC;
+    --text-sec: #94A3B8;
+    --text-muted: #64748B;
+    --success: #10B981;
+    --warning: #F59E0B;
+    --error: #EF4444;
+    --radius: 12px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 0;
+  }
+
+  /* --- Hero --- */
+  .hero {
+    background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.15));
+    border-bottom: 1px solid var(--border);
+    padding: 60px 24px 48px;
+    text-align: center;
+  }
+  .hero h1 {
+    font-size: clamp(28px, 5vw, 44px);
+    font-weight: 800;
+    background: linear-gradient(135deg, #818CF8, #C084FC);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 12px;
+  }
+  .hero .subtitle { font-size: 18px; color: var(--text-sec); max-width: 600px; margin: 0 auto 24px; }
+  .hero .version { font-size: 13px; color: var(--text-muted); background: var(--elevated); display: inline-block; padding: 4px 14px; border-radius: 99px; }
+
+  /* --- Layout --- */
+  .container { max-width: 900px; margin: 0 auto; padding: 32px 24px; }
+
+  /* --- Table of Contents --- */
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px 28px;
+    margin-bottom: 40px;
+  }
+  .toc h2 { font-size: 18px; margin-bottom: 16px; color: var(--accent); }
+  .toc ol { padding-left: 20px; }
+  .toc li { margin-bottom: 8px; }
+  .toc a { color: #818CF8; text-decoration: none; font-size: 15px; }
+  .toc a:hover { text-decoration: underline; }
+  .toc .sub { padding-left: 20px; list-style: disc; }
+
+  /* --- Sections --- */
+  section { margin-bottom: 48px; }
+  h2 {
+    font-size: 26px;
+    font-weight: 700;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  h2 .num {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: white;
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  h3 { font-size: 19px; font-weight: 600; margin: 24px 0 12px; color: #C4B5FD; }
+  h4 { font-size: 15px; font-weight: 600; margin: 16px 0 8px; color: var(--text-sec); }
+  p { margin-bottom: 14px; color: var(--text-sec); font-size: 15px; }
+
+  /* --- Callout boxes --- */
+  .callout {
+    background: var(--surface);
+    border-left: 4px solid var(--accent);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 16px 20px;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+  .callout.tip { border-left-color: var(--success); }
+  .callout.warn { border-left-color: var(--warning); }
+  .callout.important { border-left-color: var(--error); }
+  .callout .label { font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .callout.tip .label { color: var(--success); }
+  .callout.warn .label { color: var(--warning); }
+  .callout.important .label { color: var(--error); }
+
+  /* --- Step cards --- */
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    margin: 16px 0;
+    position: relative;
+  }
+  .step::before {
+    content: attr(data-step);
+    position: absolute;
+    top: -12px;
+    left: 20px;
+    background: var(--accent);
+    color: white;
+    padding: 2px 12px;
+    border-radius: 99px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .step h4 { margin-top: 8px; color: var(--text); font-size: 16px; }
+  .step p { margin-top: 8px; }
+
+  /* --- Flow diagram --- */
+  .flow {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin: 24px 0;
+  }
+  .flow-item {
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 18px;
+    text-align: center;
+    min-width: 120px;
+  }
+  .flow-item .icon { font-size: 24px; margin-bottom: 4px; }
+  .flow-item .label { font-size: 12px; font-weight: 600; color: var(--text); }
+  .flow-item .desc { font-size: 10px; color: var(--text-muted); }
+  .flow-arrow { font-size: 20px; color: var(--text-muted); padding: 0 6px; }
+
+  /* --- Feature grid --- */
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 16px;
+    margin: 20px 0;
+  }
+  .feature {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .feature .icon { font-size: 28px; margin-bottom: 8px; }
+  .feature h4 { color: var(--text); margin: 0 0 6px; font-size: 15px; }
+  .feature p { margin: 0; font-size: 13px; }
+
+  /* --- Tables --- */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  th { background: var(--elevated); color: var(--text); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+  td { color: var(--text-sec); }
+  tr:hover td { background: rgba(99,102,241,0.05); }
+
+  /* --- Code / kbd --- */
+  kbd {
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    color: #C4B5FD;
+  }
+  code {
+    background: var(--elevated);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: #FDE68A;
+  }
+
+  /* --- Comparison --- */
+  .comparison {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .comparison > div {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+  }
+  .comparison h4 { margin: 0 0 10px; font-size: 15px; }
+  .comparison ul { padding-left: 18px; font-size: 13px; color: var(--text-sec); }
+  .comparison li { margin-bottom: 4px; }
+  @media (max-width: 600px) { .comparison { grid-template-columns: 1fr; } }
+
+  /* --- Numbered list (styled) --- */
+  .steps-list { counter-reset: steps; list-style: none; padding: 0; }
+  .steps-list li {
+    counter-increment: steps;
+    padding: 10px 0 10px 48px;
+    position: relative;
+    font-size: 15px;
+    color: var(--text-sec);
+    border-bottom: 1px solid rgba(71,85,105,0.3);
+  }
+  .steps-list li::before {
+    content: counter(steps);
+    position: absolute;
+    left: 0;
+    top: 10px;
+    width: 32px;
+    height: 32px;
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--accent);
+  }
+
+  strong { color: var(--text); }
+  em { color: #C4B5FD; font-style: normal; }
+
+  /* --- Scroll anchor offset --- */
+  [id] { scroll-margin-top: 24px; }
+
+  /* --- Responsive --- */
+  @media (max-width: 600px) {
+    .hero { padding: 40px 16px 32px; }
+    .container { padding: 24px 16px; }
+    h2 { font-size: 22px; }
+    .flow { gap: 8px; }
+    .flow-arrow { display: none; }
+    .features { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ========================== HERO ========================== -->
+<div class="hero">
+  <h1>Veo 3.1 Video Generator</h1>
+  <p class="subtitle">Complete User Guide — Everything you need to know to create AI-generated videos from images and dialogue scripts</p>
+  <span class="version">Platform Version 2 • Powered by Google Veo 3.1</span>
+</div>
+
+<div class="container">
+
+<!-- ========================== TOC ========================== -->
+<nav class="toc">
+  <h2>📑 Table of Contents</h2>
+  <ol>
+    <li><a href="#overview">What Is This Platform?</a></li>
+    <li><a href="#workflow">The End-to-End Workflow</a></li>
+    <li><a href="#getting-started">Getting Started — Login & API Keys</a></li>
+    <li><a href="#step1-images">Step 1 — Upload Images</a></li>
+    <li><a href="#step2-settings">Step 2 — Configure Settings</a></li>
+    <li><a href="#step3-script">Step 3 — Write Your Dialogue Script</a></li>
+    <li><a href="#step4-generate">Step 4 — Start Generation</a></li>
+    <li><a href="#step5-review">Step 5 — Review & Approve Clips</a></li>
+    <li><a href="#step6-export">Step 6 — Export Final Video</a></li>
+    <li><a href="#voice-swap">Voice Swap (Post-Processing)</a></li>
+    <li><a href="#modes">Simple Mode vs Storyboard Mode</a></li>
+    <li><a href="#settings-ref">Settings Reference</a></li>
+    <li><a href="#tips">Tips & Best Practices</a></li>
+    <li><a href="#troubleshooting">Troubleshooting</a></li>
+  </ol>
+</nav>
+
+<!-- ========================== 1. OVERVIEW ========================== -->
+<section id="overview">
+  <h2><span class="num">1</span> What Is This Platform?</h2>
+  <p>The <strong>Veo 3.1 Video Generator</strong> is a web application that turns <strong>still images + dialogue text</strong> into realistic AI-generated videos where the subject appears to speak your script. It uses Google's Veo 3.1 model to generate video clips, with optional OpenAI integration for intelligent prompt optimization.</p>
+
+  <h3>What You Can Create</h3>
+  <div class="features">
+    <div class="feature">
+      <div class="icon">🎬</div>
+      <h4>Talking-Head Videos</h4>
+      <p>Upload a photo of a person and provide dialogue — the AI animates them speaking naturally with lip-sync and gestures.</p>
+    </div>
+    <div class="feature">
+      <div class="icon">📖</div>
+      <h4>Multi-Scene Stories</h4>
+      <p>Upload multiple images and write a full script — the platform creates clips that transition between scenes with visual continuity.</p>
+    </div>
+    <div class="feature">
+      <div class="icon">🌍</div>
+      <h4>Multi-Language Content</h4>
+      <p>Generate videos in English, Italian, Spanish, French, or German with language-appropriate speaking rates and auto-splitting.</p>
+    </div>
+    <div class="feature">
+      <div class="icon">🎙️</div>
+      <h4>Voice Swapping</h4>
+      <p>After generation, swap the AI voice with a cloned voice using OpenVoice or ElevenLabs for a personalized result.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ========================== 2. WORKFLOW ========================== -->
+<section id="workflow">
+  <h2><span class="num">2</span> The End-to-End Workflow</h2>
+  <p>Here's how a job flows from start to finish:</p>
+
+  <div class="flow">
+    <div class="flow-item">
+      <div class="icon">🔐</div>
+      <div class="label">Login</div>
+      <div class="desc">Google OAuth</div>
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-item">
+      <div class="icon">📤</div>
+      <div class="label">Upload</div>
+      <div class="desc">1+ images</div>
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-item">
+      <div class="icon">⚙️</div>
+      <div class="label">Configure</div>
+      <div class="desc">Settings</div>
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-item">
+      <div class="icon">✍️</div>
+      <div class="label">Script</div>
+      <div class="desc">Dialogue text</div>
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-item">
+      <div class="icon">🚀</div>
+      <div class="label">Generate</div>
+      <div class="desc">AI creates clips</div>
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-item">
+      <div class="icon">✅</div>
+      <div class="label">Review</div>
+      <div class="desc">Approve/Redo</div>
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-item">
+      <div class="icon">📥</div>
+      <div class="label">Export</div>
+      <div class="desc">Final video</div>
+    </div>
+  </div>
+
+  <p>The platform breaks your script into individual <strong>clips</strong> (typically ~8 seconds each). Each clip is generated independently, then you review and approve them. Once all clips are approved, you can export a single stitched video or download them individually.</p>
+</section>
+
+<!-- ========================== 3. GETTING STARTED ========================== -->
+<section id="getting-started">
+  <h2><span class="num">3</span> Getting Started — Login & API Keys</h2>
+
+  <h3>Logging In</h3>
+  <p>When you open the platform, you'll be redirected to a <strong>Google OAuth login</strong> page. Sign in with your Google account. Your profile picture and name will appear in the top-right corner of the header.</p>
+
+  <h3>API Keys — How the Platform Routes Your Jobs</h3>
+  <p>The platform has <strong>two backends</strong> for generating videos. Which one is used depends on whether you have personal API keys:</p>
+
+  <div class="comparison">
+    <div>
+      <h4 style="color: var(--success);">✅ With Your API Keys</h4>
+      <ul>
+        <li>Uses the <strong>API backend</strong> (direct Google Veo API)</li>
+        <li>Faster processing</li>
+        <li>Uses your own Gemini API quota</li>
+        <li>You control rate limits</li>
+      </ul>
+    </div>
+    <div>
+      <h4 style="color: var(--accent);">🔄 Without API Keys</h4>
+      <ul>
+        <li>Uses the <strong>Flow backend</strong> (browser automation)</li>
+        <li>No API key needed</li>
+        <li>Processing via queued workers</li>
+        <li>May be slower during peak times</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Managing Your API Keys</h3>
+  <ol class="steps-list">
+    <li>Click your <strong>profile avatar</strong> in the top-right corner of the header</li>
+    <li>Select <strong>"🔑 API Keys"</strong> from the dropdown menu</li>
+    <li>In the modal, you can add keys individually or in bulk (one per line)</li>
+    <li>Keys are validated automatically — you'll see status indicators: <span style="color:var(--success)">● Working</span>, <span style="color:var(--warning)">● Rate Limited</span>, or <span style="color:var(--error)">● Invalid</span></li>
+    <li>Use the <strong>"Re-check All Keys"</strong> button to refresh statuses at any time</li>
+  </ol>
+
+  <div class="callout tip">
+    <div class="label">💡 Where to Get Gemini API Keys</div>
+    <p>Go to <strong>aistudio.google.com/apikey</strong> and create a key. Keys start with <code>AIzaSy...</code>. You can add multiple keys — the platform rotates between them to avoid rate limits.</p>
+  </div>
+</section>
+
+<!-- ========================== 4. UPLOAD IMAGES ========================== -->
+<section id="step1-images">
+  <h2><span class="num">4</span> Step 1 — Upload Images</h2>
+  <p>The first card in the configuration panel is <strong>"Images"</strong>. This is where you provide the visual source material for your video.</p>
+
+  <h3>How to Upload</h3>
+  <p>Drag and drop images onto the upload area, or click it to browse your files. Accepted formats are <strong>PNG, JPG, and WebP</strong>.</p>
+
+  <h3>How Many Images Matter</h3>
+  <table>
+    <thead><tr><th>Images Uploaded</th><th>Mode</th><th>Behavior</th></tr></thead>
+    <tbody>
+      <tr><td><strong>1 image</strong></td><td>Simple Mode</td><td>The same image is used as the visual reference for every clip. Best for single-speaker talking-head videos.</td></tr>
+      <tr><td><strong>2+ images</strong></td><td>Storyboard Mode</td><td>Images are cycled through or manually assigned to clips. Enables scene transitions and multi-scene storytelling.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout tip">
+    <div class="label">💡 Image Tips</div>
+    <p>Use clear, well-lit photos of people for best results. The AI works best with front-facing subjects. Higher resolution images produce better output, but they will be processed at the resolution you select (720p or 1080p).</p>
+  </div>
+
+  <p>After uploading, thumbnails appear below the upload area. You can hover over them to see a larger preview, and click the <strong>✕</strong> button on a thumbnail to remove an image.</p>
+</section>
+
+<!-- ========================== 5. SETTINGS ========================== -->
+<section id="step2-settings">
+  <h2><span class="num">5</span> Step 2 — Configure Settings</h2>
+  <p>The <strong>"Settings"</strong> card controls how your video clips are generated.</p>
+
+  <table>
+    <thead><tr><th>Setting</th><th>Options</th><th>What It Does</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Language</strong></td>
+        <td>English, Italian, Spanish, French, German</td>
+        <td>Sets the language for dialogue. Affects auto-split word count and speaking rate calculations.</td>
+      </tr>
+      <tr>
+        <td><strong>Words per Line</strong></td>
+        <td>10–35 (default: 21)</td>
+        <td>Controls how many words fit in each auto-split clip. Adjust up for fast speakers, down for slower delivery.</td>
+      </tr>
+      <tr>
+        <td><strong>Duration</strong></td>
+        <td>4s, 6s, 8s</td>
+        <td>Length of each generated clip. <strong>8 seconds</strong> is required for interpolation and 1080p.</td>
+      </tr>
+      <tr>
+        <td><strong>Aspect Ratio</strong></td>
+        <td>16:9 (landscape) / 9:16 (portrait)</td>
+        <td>9:16 is ideal for TikTok/Reels/Shorts. 16:9 for YouTube/presentations.</td>
+      </tr>
+      <tr>
+        <td><strong>Resolution</strong></td>
+        <td>720p HD / 1080p Full HD</td>
+        <td>Higher resolution = better quality but requires 8-second duration.</td>
+      </tr>
+      <tr>
+        <td><strong>Interpolation</strong></td>
+        <td>On / Off</td>
+        <td>Generates smooth motion between frames. Creates natural talking motion and transitions. Requires 8s duration. <strong>Recommended: ON</strong></td>
+      </tr>
+      <tr>
+        <td><strong>AI Prompts</strong></td>
+        <td>On / Off</td>
+        <td>When ON, the AI analyzes your images and optimizes the visual prompts (camera angle, lighting, gestures). When OFF, you write your own custom visual prompt.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Context for AI (Optional)</h3>
+  <p>Below the toggle switches, there's an optional <strong>"Context for AI"</strong> text area. This lets you give the AI additional information it can't see in the image, such as:</p>
+  <ul style="padding-left: 20px; color: var(--text-sec); font-size: 14px; margin-bottom: 14px;">
+    <li>The speaker's profession or role</li>
+    <li>The mood or tone you want (serious, friendly, urgent)</li>
+    <li>Setting context (indoor studio, outdoor, clinic)</li>
+    <li>Voice style preferences</li>
+  </ul>
+
+  <h3>Generation Mode (Multi-Image Only)</h3>
+  <p>When using 2+ images in Auto-Cycle mode, a <strong>Generation Mode</strong> dropdown appears:</p>
+  <table>
+    <thead><tr><th>Mode</th><th>How It Works</th><th>Best For</th></tr></thead>
+    <tbody>
+      <tr><td><strong>🔀 Smart (Staggered)</strong></td><td>Generates odd clips first (1, 3, 5...), then even clips use confirmed frames from neighbors</td><td>Most use cases — fast AND smooth transitions</td></tr>
+      <tr><td><strong>⚡ Fast (Parallel)</strong></td><td>All clips generated simultaneously</td><td>Speed priority — may have transition gaps</td></tr>
+      <tr><td><strong>🔗 Safe (Sequential)</strong></td><td>One clip at a time, each using the previous clip's output</td><td>Maximum visual continuity — slowest</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <div class="label">ℹ️ When Settings Are Locked</div>
+    <p><strong>1080p resolution</strong> requires 8-second duration. <strong>Interpolation</strong> also requires 8-second duration. The UI enforces these constraints automatically.</p>
+  </div>
+</section>
+
+<!-- ========================== 6. SCRIPT ========================== -->
+<section id="step3-script">
+  <h2><span class="num">6</span> Step 3 — Write Your Dialogue Script</h2>
+  <p>The <strong>"Dialogue Script"</strong> section is where you type or paste the text your subject will speak. This is the core of your video — each line becomes one video clip.</p>
+
+  <h3>Auto-Split (Recommended)</h3>
+  <p>Auto-split is <strong>enabled by default</strong> (the ✂️ toggle). When on, you can paste an entire paragraph or speech and the platform will automatically break it into appropriately-sized clips based on your language's speaking rate and the "words per line" setting.</p>
+
+  <div class="callout tip">
+    <div class="label">💡 How Auto-Split Works</div>
+    <p>The platform targets approximately <strong>7 seconds of speech per clip</strong>. It splits at sentence boundaries when possible, ensuring each clip has a natural-sounding chunk. The word count threshold adapts to your selected language — Italian and Spanish have different speaking rates than English.</p>
+  </div>
+
+  <h3>Manual Mode (Auto-Split Off)</h3>
+  <p>When auto-split is toggled off, each line you type (separated by Enter/Return) becomes exactly one clip. This gives you full control over where clips begin and end.</p>
+
+  <h3>The Script Editor</h3>
+  <p>The editor shows your text with <strong>colored line numbers</strong>. Each numbered line represents one clip that will be generated. As you type, a summary below the editor shows:</p>
+  <ul style="padding-left: 20px; color: var(--text-sec); font-size: 14px; margin-bottom: 14px;">
+    <li>Total number of clips</li>
+    <li>Word count per line</li>
+    <li>Estimated duration per clip</li>
+    <li>Warnings if any line is too long for the selected duration</li>
+  </ul>
+
+  <div class="callout warn">
+    <div class="label">⚠️ Line Length Matters</div>
+    <p>If a line contains more words than can fit in your selected clip duration (e.g., 8 seconds), the audio may get cut off or compressed. The editor highlights problematic lines so you can shorten them.</p>
+  </div>
+</section>
+
+<!-- ========================== 7. GENERATE ========================== -->
+<section id="step4-generate">
+  <h2><span class="num">7</span> Step 4 — Start Generation</h2>
+
+  <h3>Launching a Job</h3>
+  <p>Once images, settings, and script are ready, click the <strong>🚀 Start Generation</strong> button. The platform will:</p>
+
+  <ol class="steps-list">
+    <li>Validate your configuration (images uploaded, script not empty, settings compatible)</li>
+    <li>Determine the backend (API or Flow) based on your API key status</li>
+    <li>Upload your reference frames to cloud storage for reliability</li>
+    <li>If AI Prompts is enabled, analyze your images and generate optimized visual prompts</li>
+    <li>Create individual clip tasks and begin processing</li>
+  </ol>
+
+  <h3>Monitoring Progress</h3>
+  <p>Once generation starts, the interface splits into two panels:</p>
+  <div class="comparison">
+    <div>
+      <h4>Left Panel — Configuration</h4>
+      <ul>
+        <li>Your settings remain visible</li>
+        <li>A <strong>"Jobs"</strong> card appears listing all your jobs</li>
+        <li>Click any job to view its details</li>
+        <li>Progress bar shows completion %</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Right Panel — Review</h4>
+      <ul>
+        <li>Shows the selected job's clips in a grid</li>
+        <li>Clips appear with live status (pending → generating → completed)</li>
+        <li>Progress stats at the top (completed, failed, total)</li>
+        <li>Real-time logs at the bottom</li>
+      </ul>
+    </div>
+  </div>
+
+  <p>Each clip card shows its status with a colored border:</p>
+  <table>
+    <thead><tr><th>Status</th><th>Color</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td>Pending</td><td>—</td><td>Waiting to be processed</td></tr>
+      <tr><td>Generating</td><td style="color:var(--accent)">Purple</td><td>Currently being created by the AI</td></tr>
+      <tr><td>Completed</td><td style="color:var(--success)">Green</td><td>Video generated, ready for review</td></tr>
+      <tr><td>Failed</td><td style="color:var(--error)">Red</td><td>Generation failed — can be retried</td></tr>
+      <tr><td>Redo Queued</td><td style="color:var(--warning)">Yellow</td><td>Scheduled for regeneration</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <div class="label">ℹ️ Generation Time</div>
+    <p>Each clip typically takes <strong>1–3 minutes</strong> to generate depending on the backend, resolution, and current load. The platform processes clips in parallel when possible, so a 10-clip job doesn't take 10× as long.</p>
+  </div>
+</section>
+
+<!-- ========================== 8. REVIEW ========================== -->
+<section id="step5-review">
+  <h2><span class="num">8</span> Step 5 — Review & Approve Clips</h2>
+  <p>This is where you decide which generated clips make the final cut.</p>
+
+  <h3>The Clip Grid</h3>
+  <p>Each completed clip appears as a card with a video preview. You can play each clip to watch the result. Below each video, you'll see the dialogue text and action buttons.</p>
+
+  <h3>Actions Per Clip</h3>
+  <table>
+    <thead><tr><th>Button</th><th>Action</th><th>What Happens</th></tr></thead>
+    <tbody>
+      <tr><td><strong>✓ Approve</strong></td><td>Accept this clip</td><td>Marks the clip as final. A green border appears around the card.</td></tr>
+      <tr><td><strong>↻ Redo</strong></td><td>Regenerate</td><td>Queues a new attempt for this clip (up to 5 retries). The old version is replaced.</td></tr>
+      <tr><td><strong>🗑 Delete</strong></td><td>Remove clip</td><td>Permanently removes this clip from the job.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Variants — Multiple Versions</h3>
+  <p>If a clip was regenerated (via Redo), the variant navigation appears at the bottom of the video preview:</p>
+  <p>Use the <strong>◀ ▶ arrows</strong> to browse between variants (e.g., "1/3" means you're viewing variant 1 of 3 total). You can select the variant you like best before approving.</p>
+
+  <div class="callout tip">
+    <div class="label">💡 Review Workflow</div>
+    <p>You don't have to wait for all clips to finish. Approve clips as they complete. If one clip doesn't look right, hit Redo immediately — it will regenerate while the remaining clips continue processing.</p>
+  </div>
+
+  <h3>Download Individual Clips</h3>
+  <p>Hover over any completed clip's video and a <strong>⬇️ download button</strong> appears in the top-right corner. Click it to download that single clip as an MP4 file.</p>
+</section>
+
+<!-- ========================== 9. EXPORT ========================== -->
+<section id="step6-export">
+  <h2><span class="num">9</span> Step 6 — Export Final Video</h2>
+  <p>Once all clips are approved, you have two options to get your finished content:</p>
+
+  <h3>Option A: Download All Clips</h3>
+  <p>Click <strong>"📥 Download All"</strong> to download each approved clip as a separate MP4 file. This is useful if you want to edit them in your own video editor.</p>
+
+  <h3>Option B: Export as Stitched Video</h3>
+  <p>Click <strong>"✂️ Export Final"</strong> to merge all approved clips into a single continuous video. This opens an <strong>Export Settings</strong> modal with these options:</p>
+
+  <table>
+    <thead><tr><th>Setting</th><th>Default</th><th>What It Does</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Trim Start Frames</strong></td><td>0</td><td>Number of frames to cut from the beginning of each clip (removes static intro frames)</td></tr>
+      <tr><td><strong>Trim End Frames</strong></td><td>7</td><td>Number of frames to cut from the end of each clip (removes trailing artifacts)</td></tr>
+      <tr><td><strong>Smart Trim</strong></td><td>ON ✓</td><td>Skips start-frame trimming for the first clip and for clips at scene cuts (to preserve natural openings)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Audio Enhancement Options</h3>
+  <p>The export dialog also includes audio processing toggles:</p>
+
+  <table>
+    <thead><tr><th>Option</th><th>Default</th><th>What It Does</th></tr></thead>
+    <tbody>
+      <tr><td><strong>😂 Remove Laughter</strong></td><td>ON</td><td>Uses noise reduction to suppress generated laughter artifacts. Adjustable strength (50–100%).</td></tr>
+      <tr><td><strong>🎛️ DeepFilterNet</strong></td><td>ON</td><td>AI-powered removal of hiss, static, and background noise while preserving voice clarity.</td></tr>
+      <tr><td><strong>🎚️ Voice Filter</strong></td><td>OFF</td><td>Applies compressor, noise gate, and limiter. Can sound robotic — use sparingly.</td></tr>
+      <tr><td><strong>📊 Loudness Norm</strong></td><td>ON</td><td>Normalizes volume to broadcast standard (EBU R128, -16 LUFS) for consistent playback.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout tip">
+    <div class="label">💡 Frame Trimming Explained</div>
+    <p>AI-generated video clips often have a few static frames at the beginning and end. Trimming 7 frames from the end (~0.3 seconds at 24fps) creates smoother transitions between clips in the final stitched video. The "Smart Trim" option ensures the very first clip keeps its natural opening.</p>
+  </div>
+</section>
+
+<!-- ========================== 10. VOICE SWAP ========================== -->
+<section id="voice-swap">
+  <h2><span class="num">10</span> Voice Swap (Post-Processing)</h2>
+  <p>After exporting your final video, you can replace the AI-generated voice with a cloned version of a real voice.</p>
+
+  <h3>Two Voice Cloning Providers</h3>
+  <div class="comparison">
+    <div>
+      <h4>🎙️ OpenVoice v2</h4>
+      <ul>
+        <li>Self-hosted, very low cost (~$0.01/run)</li>
+        <li>Upload a voice sample or use clips as reference</li>
+        <li>Adjustable voice similarity (tau: 0.1–0.5)</li>
+        <li>Pitch normalization control</li>
+      </ul>
+    </div>
+    <div>
+      <h4>🔊 ElevenLabs</h4>
+      <ul>
+        <li>Premium quality, uses your API credits</li>
+        <li>Requires ElevenLabs API key + Voice ID</li>
+        <li>Controls: stability, similarity, style</li>
+        <li>Built-in noise removal and speaker boost</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>How to Use Voice Swap</h3>
+  <ol class="steps-list">
+    <li>After export, a <strong>🎙️ Voice Swap</strong> button appears on your exported video</li>
+    <li>Choose your provider (OpenVoice or ElevenLabs)</li>
+    <li>For OpenVoice: upload a voice sample audio file, or select clips to use as reference audio</li>
+    <li>For ElevenLabs: enter your API key and Voice ID</li>
+    <li>Adjust voice parameters and click process</li>
+    <li>Download the new video with the swapped voice</li>
+  </ol>
+</section>
+
+<!-- ========================== 11. MODES ========================== -->
+<section id="modes">
+  <h2><span class="num">11</span> Simple Mode vs Storyboard Mode</h2>
+  <p>The platform offers two editing experiences depending on how many images you upload.</p>
+
+  <h3>Simple Mode (1 Image)</h3>
+  <p>Activated when you upload a single image. The UI shows:</p>
+  <ol class="steps-list">
+    <li><strong>Images card</strong> — your single reference image</li>
+    <li><strong>Settings card</strong> — all configuration options</li>
+    <li><strong>Dialogue Script</strong> — a simple text editor for your script</li>
+  </ol>
+  <p>Every clip uses the same image as its visual reference. This is perfect for monologue-style content where one person speaks throughout.</p>
+
+  <h3>Storyboard Mode (2+ Images)</h3>
+  <p>Activated when you upload two or more images. The UI reorganizes to show the <strong>Script Editor</strong> with a visual sidebar. You have two sub-modes:</p>
+
+  <div class="comparison">
+    <div>
+      <h4>🔄 Auto-Cycle</h4>
+      <ul>
+        <li>Default mode for 2+ images</li>
+        <li>Images cycle through clips round-robin</li>
+        <li>Clip 1 → Image 1, Clip 2 → Image 2, etc.</li>
+        <li>After the last image, it loops back</li>
+        <li>Simplest approach for multi-scene content</li>
+      </ul>
+    </div>
+    <div>
+      <h4>🎬 Storyboard</h4>
+      <ul>
+        <li>Manual control over scene breaks</li>
+        <li>Drag images from sidebar to create scenes</li>
+        <li>Each scene can span multiple clips</li>
+        <li>Control transitions between scenes (blend or cut)</li>
+        <li>Choose clip mode per scene: blend, continue, or fresh</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Storyboard Scene Controls</h3>
+  <p>In Storyboard mode, when you drag an image into the editor, a scene divider appears. Each scene has these options:</p>
+  <table>
+    <thead><tr><th>Option</th><th>Values</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Clip Mode</strong></td><td>blend, continue, fresh</td><td>How the AI generates clips within this scene</td></tr>
+      <tr><td><strong>Transition</strong></td><td>blend, cut</td><td>How this scene transitions from the previous one. <em>Blend</em> = smooth morph, <em>Cut</em> = hard switch.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ========================== 12. SETTINGS REF ========================== -->
+<section id="settings-ref">
+  <h2><span class="num">12</span> Settings Reference</h2>
+
+  <h3>Resolution & Duration Constraints</h3>
+  <table>
+    <thead><tr><th>Resolution</th><th>Available Durations</th><th>Interpolation</th></tr></thead>
+    <tbody>
+      <tr><td>720p HD</td><td>4s, 6s, 8s</td><td>Only at 8s</td></tr>
+      <tr><td>1080p Full HD</td><td>8s only</td><td>Only at 8s</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Language Speaking Rates</h3>
+  <p>The platform uses language-specific speaking rates to determine how many words fit in each clip when auto-splitting:</p>
+  <table>
+    <thead><tr><th>Language</th><th>Default Words/Line</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>English</td><td>~21</td><td>Standard conversational pace</td></tr>
+      <tr><td>Italian</td><td>~21</td><td>Slightly faster speaking rate</td></tr>
+      <tr><td>Spanish</td><td>~21</td><td>Natural conversational flow</td></tr>
+      <tr><td>French</td><td>~21</td><td>Moderate speaking pace</td></tr>
+      <tr><td>German</td><td>~21</td><td>Compound words may need adjustment</td></tr>
+    </tbody>
+  </table>
+  <p>Use the <strong>words per line</strong> number input next to the language selector to fine-tune this value (range: 10–35).</p>
+
+  <h3>Job Statuses</h3>
+  <table>
+    <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>pending</code></td><td>Job created, waiting for worker to pick it up</td></tr>
+      <tr><td><code>running</code> / <code>generating</code></td><td>Clips are being generated</td></tr>
+      <tr><td><code>paused</code></td><td>Generation paused (can be resumed)</td></tr>
+      <tr><td><code>waiting_approval</code></td><td>All clips done, waiting for your review</td></tr>
+      <tr><td><code>completed</code></td><td>All clips approved, ready to export</td></tr>
+      <tr><td><code>failed</code></td><td>Job encountered an unrecoverable error</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ========================== 13. TIPS ========================== -->
+<section id="tips">
+  <h2><span class="num">13</span> Tips & Best Practices</h2>
+
+  <div class="step" data-step="Images">
+    <h4>Choose the Right Images</h4>
+    <p>Use high-quality, well-lit photos with the subject facing forward. Avoid heavy filters or unusual angles. A clean background helps the AI focus on the subject.</p>
+  </div>
+
+  <div class="step" data-step="Script">
+    <h4>Write Natural Dialogue</h4>
+    <p>Write as people actually speak — contractions, pauses, natural sentence lengths. Avoid very long sentences. Let auto-split handle the line breaks for you, then review and adjust if needed.</p>
+  </div>
+
+  <div class="step" data-step="Duration">
+    <h4>Use 8 Seconds + Interpolation</h4>
+    <p>The 8-second duration with interpolation enabled produces the most natural-looking results. It allows enough time for speech and gives the AI room for smooth motion.</p>
+  </div>
+
+  <div class="step" data-step="API Keys">
+    <h4>Add Multiple API Keys</h4>
+    <p>If using the API backend, add 3–5 Gemini API keys. The platform rotates between them, avoiding rate limits and enabling faster parallel generation.</p>
+  </div>
+
+  <div class="step" data-step="Review">
+    <h4>Review as You Go</h4>
+    <p>Don't wait for all clips to finish. Approve good clips immediately and Redo bad ones. This saves time because redos process alongside remaining clips.</p>
+  </div>
+
+  <div class="step" data-step="Export">
+    <h4>Use Smart Trim</h4>
+    <p>Keep Smart Trim enabled during export. It preserves the natural opening of your first clip while trimming static frames between middle clips for smooth playback.</p>
+  </div>
+
+  <div class="step" data-step="Audio">
+    <h4>Enable Audio Enhancement</h4>
+    <p>The AI-generated audio often has subtle artifacts. Keep "Remove Laughter" and "DeepFilterNet" enabled during export for cleaner audio. Only use "Voice Filter" if the audio needs heavy processing.</p>
+  </div>
+</section>
+
+<!-- ========================== 14. TROUBLESHOOTING ========================== -->
+<section id="troubleshooting">
+  <h2><span class="num">14</span> Troubleshooting</h2>
+
+  <table>
+    <thead><tr><th>Problem</th><th>Likely Cause</th><th>Solution</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Can't start generation</td>
+        <td>Missing images, empty script, or incompatible settings</td>
+        <td>Check that images are uploaded, at least one dialogue line exists, and settings are compatible (e.g., 1080p needs 8s)</td>
+      </tr>
+      <tr>
+        <td>Clips keep failing</td>
+        <td>API key exhausted or invalid</td>
+        <td>Go to API Keys and re-check all keys. Add more keys if they're all rate-limited.</td>
+      </tr>
+      <tr>
+        <td>Job stuck on "pending"</td>
+        <td>Worker not running or backend queue full</td>
+        <td>If using Flow backend, the job is queued for browser automation. Wait for a worker slot to open.</td>
+      </tr>
+      <tr>
+        <td>Video has no speech audio</td>
+        <td>Dialogue line was empty or too short</td>
+        <td>Ensure each line has meaningful dialogue text. Very short lines (1–2 words) may produce silent clips.</td>
+      </tr>
+      <tr>
+        <td>Export fails: "No approved clips"</td>
+        <td>Clips not approved yet</td>
+        <td>Go to the Review panel and click ✓ Approve on each clip you want to include in the export.</td>
+      </tr>
+      <tr>
+        <td>Redo doesn't work</td>
+        <td>Cloud storage not configured or local files cleared</td>
+        <td>Check the logs panel — if frames weren't backed up to cloud storage, redos may fail after server restarts.</td>
+      </tr>
+      <tr>
+        <td>Voice swap produces bad audio</td>
+        <td>Poor reference audio quality</td>
+        <td>Use a clear, noise-free voice sample. 5–15 seconds of clean speech works best as a reference.</td>
+      </tr>
+      <tr>
+        <td>Images not uploading</td>
+        <td>Unsupported format or too large</td>
+        <td>Use PNG, JPG, or WebP files. Try reducing the file size if uploads time out.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <div class="label">ℹ️ Checking Logs</div>
+    <p>Every job has a logs section at the bottom of the Review panel. Expand it to see detailed processing information, including error messages, timing data, and backend status updates. This is the first place to look when something goes wrong.</p>
+  </div>
+</section>
+
+<!-- ========================== FOOTER ========================== -->
+<div style="text-align: center; padding: 40px 0 60px; border-top: 1px solid var(--border); margin-top: 40px;">
+  <p style="color: var(--text-muted); font-size: 13px;">Veo 3.1 Video Generator — User Guide</p>
+  <p style="color: var(--text-muted); font-size: 12px; margin-top: 4px;">Powered by Google Veo 3.1 API • AI Prompts via OpenAI • Voice Cloning via OpenVoice & ElevenLabs</p>
+</div>
+
+</div>
+</body>
+</html>
