@@ -6360,13 +6360,13 @@ Example: A realistic vertical video of a professional presenter speaking directl
                     <div class="ob-step-title">Upload Your Images</div>
                     <div class="ob-step-desc">
                         <p><strong>Drag & drop</strong> images onto the upload area on the left, or click to browse. Accepted formats: PNG, JPG, WebP.</p>
-                        <p>The number of images you upload determines the editing mode:</p>
+                        <p>The number of images you upload determines your editing mode:</p>
                     </div>
                     <ol class="ob-step-list">
-                        <li><strong>1 image</strong> → Simple Mode (same image for all clips — perfect for monologues)</li>
-                        <li><strong>2+ images</strong> → Multi-scene mode with Auto-Cycle or Storyboard options</li>
+                        <li><strong>1 image</strong> → <strong>Simple Mode</strong> — same image for all clips. Perfect for single-speaker talking heads.</li>
+                        <li><strong>2+ images</strong> → <strong>Multi-scene mode</strong> — unlocks <strong>Auto-Cycle</strong> (images rotate automatically) and <strong>Storyboard</strong> (full manual control over scenes, transitions, and clip behavior).</li>
                     </ol>
-                    <div class="ob-tip"><strong>💡 Tip:</strong> Use clear, well-lit, front-facing photos. Clean backgrounds help the AI focus on the subject.</div>
+                    <div class="ob-tip"><strong>💡 Tip:</strong> Use clear, well-lit, front-facing photos. Clean backgrounds help the AI focus on the subject. You can always add more images later to switch modes.</div>
                     <div class="ob-status waiting">
                         <span class="ob-spinner">⏳</span> Waiting for image upload...
                     </div>
@@ -6408,6 +6408,8 @@ Example: A realistic vertical video of a professional presenter speaking directl
                     <div class="ob-step-desc" style="margin-top:12px;">
                         <p><strong>Context for AI</strong> (optional text area below the toggles) — Describe the speaker's role, mood, setting, or voice style. Example: <em>"Professional doctor, confident tone, medical office background"</em></p>
                     </div>
+                    
+                    <div class="ob-tip"><strong>🔄 Want multi-scene mode?</strong> Upload a 2nd image to unlock <strong>Auto-Cycle</strong> (images rotate through clips) and <strong>Storyboard</strong> (drag images to create scenes with transitions). Just drop more images in the upload area above.</div>
                     
                     <div class="ob-status waiting">
                         <span class="ob-spinner">⏳</span> Write your dialogue script to continue...
@@ -6668,13 +6670,9 @@ Example: A realistic vertical video of a professional presenter speaking directl
         
         // Poll app state and auto-navigate to the right step
         let obLastDetermined = null;
-        let obPollRunning = false;
         async function obPoll() {
-            if (obPollRunning) return; // Prevent overlapping polls
-            obPollRunning = true;
-            
             try {
-                // Always refresh API key count
+                // Always refresh API key count (awaited — ready before step check)
                 await obCheckApiKeys();
                 
                 const shouldBe = obDetermineStep();
@@ -6716,8 +6714,13 @@ Example: A realistic vertical video of a professional presenter speaking directl
                     obLastDetermined = obCurrentStep;
                     obRender();
                 }
-            } finally {
-                obPollRunning = false;
+            } catch(e) {
+                // Ignore poll errors — will retry
+            }
+            
+            // Schedule next poll via setTimeout (avoids async overlap unlike setInterval)
+            if (obPollTimer !== null) {
+                obPollTimer = setTimeout(obPoll, 1500);
             }
         }
         
@@ -6780,7 +6783,7 @@ Example: A realistic vertical video of a professional presenter speaking directl
             sidebar.classList.remove('open');
             document.body.classList.remove('onboarding-active');
             document.getElementById('obToggleTab').classList.remove('visible');
-            if (obPollTimer) { clearInterval(obPollTimer); obPollTimer = null; }
+            if (obPollTimer !== null) { clearTimeout(obPollTimer); obPollTimer = null; }
             try { localStorage.setItem(OB_DISMISSED_KEY, 'true'); } catch(e) {}
         }
         
@@ -6802,11 +6805,14 @@ Example: A realistic vertical video of a professional presenter speaking directl
         }
         
         // Start the onboarding system
-        function obStart() {
+        async function obStart() {
             // Check if dismissed
             try {
                 if (localStorage.getItem(OB_DISMISSED_KEY) === 'true') return;
             } catch(e) {}
+            
+            // Do initial API key check BEFORE determining step
+            await obCheckApiKeys();
             
             // Determine which step to show based on current app state
             obCurrentStep = obDetermineStep();
@@ -6825,8 +6831,8 @@ Example: A realistic vertical video of a professional presenter speaking directl
             
             obRender();
             
-            // Start polling — always running while sidebar exists
-            obPollTimer = setInterval(obPoll, 1500);
+            // Start polling via setTimeout chain (not setInterval — avoids async overlap)
+            obPollTimer = setTimeout(obPoll, 1500);
         }
         
         // Hook into checkAuth — start onboarding after successful login
