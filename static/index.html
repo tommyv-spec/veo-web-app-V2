@@ -910,7 +910,7 @@
                     <!-- Filled dynamically -->
                 </div>
                 <div class="ob-skip">
-                    <button onclick="obDismiss()">Skip tutorial — I know what I'm doing</button>
+                    <button onclick="obDismiss()">Hide tutorial permanently</button>
                 </div>
             </div>
         </div>
@@ -6374,16 +6374,33 @@ Example: A realistic vertical video of a professional presenter speaking directl
                 },
                 content: () => `
                     <div class="ob-step-num">3</div>
-                    <div class="ob-step-title">Simple Mode — Configure & Write</div>
+                    <div class="ob-step-title">Simple Mode — Settings, Script & Generate</div>
                     <div class="ob-step-desc">
-                        <p>You uploaded <strong>1 image</strong>, so you're in <strong>Simple Mode</strong>. The same image will be used for every clip.</p>
-                        <p>Now do two things:</p>
+                        <p>You uploaded <strong>1 image</strong> → <strong>Simple Mode</strong>. The same image is used as the starting frame for every clip.</p>
                     </div>
+                    
+                    <div class="ob-step-desc"><strong style="color:var(--text-primary);font-size:14px;">⚙️ Settings (left panel)</strong></div>
                     <ol class="ob-step-list">
-                        <li><strong>Configure settings</strong> — Choose language, duration (8s recommended), aspect ratio, and toggle Interpolation ON for smooth motion</li>
-                        <li><strong>Write your dialogue</strong> — Type or paste your script in the "Dialogue Script" box. With Auto-split ON, the platform will break long text into ~8-second clips automatically</li>
+                        <li><strong>Language</strong> — Select the language your script is written in (EN, IT, ES, FR, DE). This affects auto-split word count and speaking rate.</li>
+                        <li><strong>Words per line</strong> — How many words fit per clip (default ~21). Lower = shorter clips, higher = longer clips.</li>
+                        <li><strong>Duration</strong> — Length of each clip. <strong>Use 8 seconds</strong> — it's required for Interpolation and 1080p resolution.</li>
+                        <li><strong>Aspect Ratio</strong> — 16:9 for landscape (YouTube) or 9:16 for portrait (TikTok, Reels, Shorts).</li>
+                        <li><strong>Resolution</strong> — 720p or 1080p. Higher quality requires 8s duration.</li>
+                        <li><strong>Interpolation</strong> — <strong>Turn ON</strong>. Creates smooth motion between frames. Requires 8s duration.</li>
+                        <li><strong>AI Prompts</strong> — ON = the AI optimizes visual prompts automatically. OFF = you write your own prompts per clip.</li>
                     </ol>
-                    <div class="ob-tip"><strong>💡 Tip:</strong> Use natural, conversational language. Let Auto-split handle line breaks first, then fine-tune.</div>
+                    
+                    <div class="ob-step-desc" style="margin-top:16px;"><strong style="color:var(--text-primary);font-size:14px;">✍️ Dialogue Script</strong></div>
+                    <div class="ob-step-desc">
+                        <p>Type or paste the text your subject will speak. This is the <strong>actual spoken dialogue</strong> — write it as natural speech.</p>
+                        <p><strong>Auto-split</strong> (enabled by default) breaks long text into clips of ~8 seconds each. You can also turn it off and press Enter to manually define where each clip starts.</p>
+                    </div>
+                    <div class="ob-tip"><strong>💡 Writing tips:</strong> Use conversational language with contractions ("I'm", "don't", "we've"). Write numbers as words ("twenty five" not "25"). Keep sentences flowing naturally — avoid bullet points or fragmented phrases.</div>
+                    
+                    <div class="ob-step-desc" style="margin-top:12px;">
+                        <p><strong>Context for AI</strong> (optional text area below the toggles) — Describe the speaker's role, mood, setting, or voice style. Example: <em>"Professional doctor, confident tone, medical office background"</em></p>
+                    </div>
+                    
                     <div class="ob-status waiting">
                         <span class="ob-spinner">⏳</span> Write your dialogue script to continue...
                     </div>
@@ -6399,17 +6416,39 @@ Example: A realistic vertical video of a professional presenter speaking directl
                 },
                 content: () => `
                     <div class="ob-step-num">3</div>
-                    <div class="ob-step-title">Auto-Cycle Mode — Multi-Scene</div>
+                    <div class="ob-step-title">Auto-Cycle Mode — Settings, Script & Scenes</div>
                     <div class="ob-step-desc">
-                        <p>You uploaded <strong>${uploadedImages.length} images</strong> in <strong>Auto-Cycle</strong> mode. Images will rotate through your clips round-robin:</p>
-                        <p>Clip 1 → Image 1, Clip 2 → Image 2, ${uploadedImages.length > 2 ? 'Clip 3 → Image 3, ' : ''}then back to Image 1, and so on.</p>
+                        <p>You uploaded <strong>${uploadedImages.length} images</strong> in <strong>Auto-Cycle</strong> mode. Images rotate through clips automatically: Clip 1 → Image 1, Clip 2 → Image 2, ${uploadedImages.length > 2 ? 'Clip 3 → Image 3, ' : ''}then back to Image 1.</p>
                     </div>
+                    
+                    <div class="ob-step-desc"><strong style="color:var(--text-primary);font-size:14px;">⚙️ Settings</strong></div>
                     <ol class="ob-step-list">
-                        <li><strong>Configure settings</strong> — Use 8s duration + Interpolation ON for smooth transitions between images</li>
-                        <li><strong>Choose generation mode</strong> — Smart (recommended), Fast, or Safe</li>
-                        <li><strong>Write your dialogue</strong> — The script will auto-split across clips. Each clip gets the next image in rotation.</li>
+                        <li><strong>Language</strong> — Must match your script's language. Affects auto-split and speaking rate.</li>
+                        <li><strong>Duration → 8 seconds</strong> — Required for Interpolation (smooth transitions between images) and 1080p.</li>
+                        <li><strong>Aspect Ratio</strong> — 16:9 (landscape) or 9:16 (portrait).</li>
+                        <li><strong>Resolution</strong> — 720p or 1080p (1080p requires 8s).</li>
+                        <li><strong>Interpolation → ON</strong> — Especially important here: it creates the smooth morph effect as clips transition between different images.</li>
+                        <li><strong>AI Prompts → ON</strong> — Let the AI optimize visual descriptions for each clip.</li>
                     </ol>
-                    <div class="ob-tip"><strong>💡 Tip:</strong> You can switch to <strong>Storyboard</strong> mode (top-right of script editor) for manual scene control.</div>
+                    
+                    <div class="ob-step-desc" style="margin-top:12px;"><strong style="color:var(--text-primary);font-size:14px;">🔀 Generation Mode</strong></div>
+                    <div class="ob-step-desc">
+                        <p>With 2+ images, you'll see a generation mode selector:</p>
+                        <p><strong>🔀 Smart</strong> (recommended) — Generates odd clips first, then even clips use confirmed end frames for smooth transitions.</p>
+                        <p><strong>⚡ Fast</strong> — All clips simultaneously. Fastest but transitions may be rougher.</p>
+                        <p><strong>🔗 Safe</strong> — One at a time, sequentially. Slowest but maximum visual continuity.</p>
+                    </div>
+                    
+                    <div class="ob-step-desc" style="margin-top:12px;"><strong style="color:var(--text-primary);font-size:14px;">✍️ Dialogue Script</strong></div>
+                    <div class="ob-step-desc">
+                        <p>Write the spoken dialogue as <strong>natural speech</strong>. Auto-split will break it into clips. Each clip gets the next image in rotation automatically.</p>
+                    </div>
+                    <div class="ob-tip"><strong>💡 Writing tips:</strong> Write conversationally — use contractions, spell out numbers as words ("thirty five" not "35"), and keep sentences flowing. The AI needs natural speech patterns to generate convincing lip-sync.</div>
+                    
+                    <div class="ob-step-desc" style="margin-top:8px;">
+                        <p>Want more control? Switch to <strong>🎬 Storyboard</strong> mode (top-right of script editor) to manually assign images to specific clips.</p>
+                    </div>
+                    
                     <div class="ob-status waiting">
                         <span class="ob-spinner">⏳</span> Write your dialogue script to continue...
                     </div>
@@ -6427,22 +6466,48 @@ Example: A realistic vertical video of a professional presenter speaking directl
                     <div class="ob-step-num">3</div>
                     <div class="ob-step-title">Storyboard Mode — Full Control</div>
                     <div class="ob-step-desc">
-                        <p>You're in <strong>Storyboard</strong> mode with <strong>${uploadedImages.length} images</strong>. You have full control over scenes, transitions, and clip behavior.</p>
+                        <p>You're in <strong>Storyboard</strong> mode with <strong>${uploadedImages.length} images</strong>. This gives you complete control over which image appears in which clips, and how scenes transition.</p>
                     </div>
+                    
+                    <div class="ob-step-desc"><strong style="color:var(--text-primary);font-size:14px;">⚙️ Settings (same as other modes)</strong></div>
                     <ol class="ob-step-list">
-                        <li><strong>Drag images</strong> from the left sidebar into the script to create scene breaks</li>
-                        <li><strong>Choose clip mode per scene:</strong><br>
-                            <span style="background:#6366f1;color:white;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;">BLEND</span> starts from original photo each time<br>
-                            <span style="background:#10b981;color:white;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;">CONTINUE</span> picks up from previous clip's last frame<br>
-                            <span style="background:#f59e0b;color:white;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;">FRESH</span> standalone clips, no transitions
-                        </li>
-                        <li><strong>Set transitions between scenes:</strong><br>
-                            <span style="color:#818CF8;font-weight:600;">🎬 BLEND TO</span> = smooth morph to next scene<br>
-                            <span style="color:#EF4444;font-weight:600;">✂️ CUT TO</span> = hard instant switch
-                        </li>
-                        <li><strong>Write dialogue</strong> within each scene block</li>
+                        <li><strong>Duration → 8 seconds</strong> — Required for Interpolation and 1080p.</li>
+                        <li><strong>Interpolation → ON</strong> — Creates smooth morphs between scenes (especially for BLEND TO transitions).</li>
+                        <li><strong>AI Prompts → ON</strong> recommended — Let AI optimize visual prompts.</li>
+                        <li><strong>Language</strong> must match your script. Aspect ratio and resolution as needed.</li>
                     </ol>
-                    <div class="ob-tip"><strong>💡 Tip:</strong> BLEND mode + BLEND TO transitions give the most cinematic results. Use CUT TO when switching between very different subjects.</div>
+                    
+                    <div class="ob-step-desc" style="margin-top:16px;"><strong style="color:var(--text-primary);font-size:14px;">🎬 How Storyboard Works</strong></div>
+                    <div class="ob-step-desc">
+                        <p>Here's an example of the storyboard editor in action:</p>
+                    </div>
+                    <img src="/static/storyboard-example.png" alt="Storyboard example" style="width:100%;border-radius:8px;border:1px solid var(--border-color);margin:8px 0 4px;box-shadow:0 2px 12px rgba(0,0,0,0.3);">
+                    <div style="font-size:10px;color:var(--text-muted);text-align:center;margin-bottom:14px;font-style:italic;">3 scenes, 2 images, 6 clips — with clip modes and transitions</div>
+                    
+                    <ol class="ob-step-list">
+                        <li><strong>Drag images</strong> from the left sidebar into the text to create scene breaks. Each scene block shows which image it uses and which clip numbers it covers.</li>
+                        <li><strong>Write dialogue</strong> inside each scene — lines within a scene will use that scene's image as their starting frame.</li>
+                    </ol>
+                    
+                    <div class="ob-step-desc" style="margin-top:14px;"><strong style="color:var(--text-primary);font-size:14px;">🎨 Clip Modes</strong> <span style="font-size:12px;color:var(--text-muted);">(buttons inside each scene header)</span></div>
+                    <div class="ob-step-desc">
+                        <p><span style="background:#6366f1;color:white;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">BLEND</span> — Each clip starts from the <strong>original photo</strong>. The AI generates from that image each time. <strong>Default and recommended</strong> — most visually consistent.</p>
+                        <p><span style="background:#10b981;color:white;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">CONTINUE</span> — Each clip starts from the <strong>last frame of the previous clip</strong>. Creates seamless flow — the subject's pose carries over naturally. Great for continuous monologues.</p>
+                        <p><span style="background:#f59e0b;color:white;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">FRESH</span> — Each clip uses the original photo but with <strong>no interpolation/transitions</strong>. Completely standalone clips. Use for content you'll edit separately.</p>
+                    </div>
+                    
+                    <div class="ob-step-desc" style="margin-top:14px;"><strong style="color:var(--text-primary);font-size:14px;">🔗 Scene Transitions</strong> <span style="font-size:12px;color:var(--text-muted);">(toggle between scenes)</span></div>
+                    <div class="ob-step-desc">
+                        <p><span style="color:#818CF8;font-weight:700;">🎬 BLEND TO</span> — The last clip of the previous scene <strong>smoothly morphs</strong> toward the next scene's image. Creates a cinematic flow between different subjects/settings.</p>
+                        <p><span style="color:#EF4444;font-weight:700;">✂️ CUT TO</span> — <strong>Hard switch</strong> — no visual blending. The previous scene ends naturally, the next scene starts fresh from its own image. Use when scenes are very different.</p>
+                    </div>
+                    
+                    <div class="ob-step-desc" style="margin-top:14px;"><strong style="color:var(--text-primary);font-size:14px;">✍️ Dialogue Script</strong></div>
+                    <div class="ob-step-desc">
+                        <p>Write natural speech inside each scene block. Auto-split divides text into clips within each scene. Write numbers as words, use contractions, keep it conversational.</p>
+                    </div>
+                    <div class="ob-tip"><strong>💡 Tip:</strong> Start with BLEND mode + BLEND TO transitions for the smoothest results. Use CUT TO when switching between very different people or locations.</div>
+                    
                     <div class="ob-status waiting">
                         <span class="ob-spinner">⏳</span> Set up your scenes and write dialogue...
                     </div>
@@ -6498,7 +6563,7 @@ Example: A realistic vertical video of a professional presenter speaking directl
             {
                 id: 'export',
                 title: '📥 Export',
-                check: () => false, // Terminal step — user decides when done
+                check: () => false, // Always show this step when we're at this stage
                 content: () => `
                     <div class="ob-step-num">6</div>
                     <div class="ob-step-title">Export Your Final Video</div>
@@ -6506,14 +6571,21 @@ Example: A realistic vertical video of a professional presenter speaking directl
                         <p>Once you've approved all the clips you want, you have two export options:</p>
                     </div>
                     <ol class="ob-step-list">
-                        <li><strong>📥 Download All</strong> — Each approved clip as a separate MP4 file</li>
-                        <li><strong>✂️ Export Final</strong> — Merges all approved clips into one stitched video with optional audio enhancement (noise removal, loudness normalization)</li>
+                        <li><strong>📥 Download All</strong> — Each approved clip as a separate MP4 file. Great for editing in your own software.</li>
+                        <li><strong>✂️ Export Final</strong> — Merges all approved clips into one continuous video. Opens a settings dialog with:
+                            <br>• <strong>Frame trimming</strong> — Cut static frames from clip boundaries (default: 0 start, 7 end)
+                            <br>• <strong>Smart Trim</strong> — Preserves first clip's opening and scene cuts
+                            <br>• <strong>Audio enhancement</strong> — Remove laughter, DeepFilterNet noise removal, loudness normalization
+                        </li>
                     </ol>
                     <div class="ob-step-desc" style="margin-top:12px;">
-                        <p><strong>Optional: Voice Swap</strong> — After exporting, click 🎙️ Voice Swap to replace the AI voice with a cloned real voice using OpenVoice or ElevenLabs.</p>
+                        <p><strong>🎙️ Voice Swap</strong> (optional) — After exporting, replace the AI voice with a cloned real voice:</p>
+                        <p><strong>OpenVoice v2</strong> — Upload a voice sample, low cost (~$0.01/run), adjustable similarity & pitch.</p>
+                        <p><strong>ElevenLabs</strong> — Premium quality, requires API key + Voice ID, fine-grained controls.</p>
                     </div>
+                    <div class="ob-tip"><strong>💡 Tip:</strong> Keep DeepFilterNet and Loudness Norm ON for the cleanest audio. Only use Voice Filter if the voice sounds muffled — it can sound robotic.</div>
                     <div class="ob-status done">
-                        ✅ You've completed the tutorial! You're ready to create amazing videos.
+                        ✅ You've reached the final step! Export when ready. This guide will stay here if you need it.
                     </div>
                 `,
             },
@@ -6559,71 +6631,80 @@ Example: A realistic vertical video of a professional presenter speaking directl
             // Update body
             document.getElementById('obBody').innerHTML = step.content();
             
-            // Update nav buttons
+            // Update nav buttons — always show back/next for manual browsing
             const nav = document.getElementById('obNav');
             const isFirst = idx === 0;
             const isLast = idx === steps.length - 1;
             
-            if (isLast) {
-                nav.innerHTML = `
-                    <button class="btn btn-secondary" onclick="obGoBack()">← Back</button>
-                    <button class="btn btn-primary" onclick="obFinish()" style="background:linear-gradient(135deg,var(--accent),var(--accent2));">🎉 Finish Tutorial</button>
-                `;
-            } else {
-                nav.innerHTML = `
-                    ${!isFirst ? '<button class="btn btn-secondary" onclick="obGoBack()">← Back</button>' : '<div></div>'}
-                    <button class="btn btn-secondary" onclick="obSkipStep()">Skip →</button>
-                `;
-            }
+            nav.innerHTML = `
+                ${!isFirst ? '<button class="btn btn-secondary" onclick="obGoBack()">← Back</button>' : '<div></div>'}
+                ${!isLast ? '<button class="btn btn-secondary" onclick="obSkipStep()">Next →</button>' : '<div></div>'}
+            `;
             
             // Save state
             obSaveState();
         }
         
-        // Check if current step is completed → auto-advance
-        function obPoll() {
+        // Determine which step SHOULD be active based on current app state
+        function obDetermineStep() {
             const steps = obGetActiveSteps();
-            const idx = obGetCurrentIndex();
-            const step = steps[idx];
-            if (!step) return;
             
-            // Check API key count (async)
-            if (step.id === 'api_keys') {
-                obCheckApiKeys();
+            // Walk through steps and find the first incomplete one
+            for (const s of steps) {
+                if (!s.check()) return s.id;
             }
             
-            // Check step branching — if mode changed, the step sequence changes
-            // Re-evaluate which step we should be on
-            const newSteps = obGetActiveSteps();
-            const currentInNew = newSteps.findIndex(s => s.id === obCurrentStep);
-            if (currentInNew < 0) {
-                // Current step is no longer in the sequence (mode changed) — find the right one
-                // Go to the first incomplete step
-                for (const s of newSteps) {
-                    if (!s.check()) {
-                        obCurrentStep = s.id;
-                        obRender();
-                        return;
-                    }
-                }
-            }
+            // All steps complete — show the last step (export)
+            return steps[steps.length - 1].id;
+        }
+        
+        // Poll app state and auto-navigate to the right step
+        let obLastDetermined = null;
+        function obPoll() {
+            // Async check for API keys
+            obCheckApiKeys();
             
-            if (step.check()) {
-                // Step completed! Update status indicator
-                const statusEl = document.querySelector('#obBody .ob-status');
-                if (statusEl && !statusEl.classList.contains('done')) {
-                    statusEl.className = 'ob-status done';
-                    statusEl.innerHTML = '✅ Done! Moving to next step...';
-                    
-                    // Auto-advance after a brief pause
-                    setTimeout(() => {
-                        const nextIdx = idx + 1;
-                        if (nextIdx < newSteps.length) {
-                            obCurrentStep = newSteps[nextIdx].id;
+            const shouldBe = obDetermineStep();
+            
+            // If the step changed, navigate to it
+            if (shouldBe !== obLastDetermined) {
+                obLastDetermined = shouldBe;
+                
+                // Only auto-navigate if user hasn't manually browsed away
+                // (we auto-navigate when the determined step is AHEAD of current)
+                const steps = obGetActiveSteps();
+                const currentIdx = steps.findIndex(s => s.id === obCurrentStep);
+                const targetIdx = steps.findIndex(s => s.id === shouldBe);
+                
+                if (targetIdx > currentIdx || currentIdx < 0) {
+                    // Step completed — show brief success then advance
+                    const statusEl = document.querySelector('#obBody .ob-status.waiting');
+                    if (statusEl) {
+                        statusEl.className = 'ob-status done';
+                        statusEl.innerHTML = '✅ Done! Moving on...';
+                        setTimeout(() => {
+                            obCurrentStep = shouldBe;
                             obRender();
-                        }
-                    }, 1200);
+                        }, 800);
+                    } else {
+                        obCurrentStep = shouldBe;
+                        obRender();
+                    }
+                } else if (targetIdx < currentIdx) {
+                    // User went backwards (e.g. deleted images) — follow them back
+                    obCurrentStep = shouldBe;
+                    obRender();
                 }
+                // If targetIdx === currentIdx, we're already showing the right step
+            }
+            
+            // Also re-check if the step content should update (e.g. mode changed from auto to storyboard)
+            const steps = obGetActiveSteps();
+            const currentInSteps = steps.findIndex(s => s.id === obCurrentStep);
+            if (currentInSteps < 0) {
+                // Current step no longer exists in active steps (mode changed) — re-determine
+                obCurrentStep = obDetermineStep();
+                obRender();
             }
         }
         
@@ -6656,10 +6737,6 @@ Example: A realistic vertical video of a professional presenter speaking directl
             }
         }
         
-        function obFinish() {
-            obDismiss();
-        }
-        
         function obMinimize() {
             const sidebar = document.getElementById('obSidebar');
             sidebar.classList.remove('open');
@@ -6673,6 +6750,8 @@ Example: A realistic vertical video of a professional presenter speaking directl
             sidebar.classList.add('open');
             document.body.classList.add('onboarding-active');
             document.getElementById('obToggleTab').classList.remove('visible');
+            // Re-determine which step to show
+            obCurrentStep = obDetermineStep();
             obRender();
             obSaveState();
         }
@@ -6710,33 +6789,14 @@ Example: A realistic vertical video of a professional presenter speaking directl
                 if (localStorage.getItem(OB_DISMISSED_KEY) === 'true') return;
             } catch(e) {}
             
-            // Load saved state or start fresh
+            // Determine which step to show based on current app state
+            obCurrentStep = obDetermineStep();
+            obLastDetermined = obCurrentStep;
+            
+            // Load saved minimized preference
             const saved = obLoadState();
-            if (saved && saved.step) {
-                obCurrentStep = saved.step;
-                // Validate the step still exists
-                const allIds = OB_STEPS.map(s => s.id);
-                if (!allIds.includes(obCurrentStep)) obCurrentStep = OB_STEPS[0].id;
-            } else {
-                obCurrentStep = OB_STEPS[0].id;
-            }
             
-            // Find the first incomplete step (skip already completed ones)
-            const steps = obGetActiveSteps();
-            let foundIncomplete = false;
-            for (const s of steps) {
-                if (!s.check()) {
-                    obCurrentStep = s.id;
-                    foundIncomplete = true;
-                    break;
-                }
-            }
-            if (!foundIncomplete) {
-                // Everything is done — don't show
-                return;
-            }
-            
-            // Show sidebar (or minimized tab)
+            // Show sidebar (or minimized tab based on saved preference)
             if (saved && saved.minimized) {
                 document.getElementById('obToggleTab').classList.add('visible');
             } else {
@@ -6746,12 +6806,11 @@ Example: A realistic vertical video of a professional presenter speaking directl
             
             obRender();
             
-            // Start polling
+            // Start polling — always running while sidebar exists
             obPollTimer = setInterval(obPoll, 1500);
         }
         
         // Hook into checkAuth — start onboarding after successful login
-        // (the existing checkAuth already calls checkShowTutorial, we piggyback on that timing)
         function checkShowOnboarding() {
             setTimeout(() => {
                 if (typeof obStart === 'function') obStart();
