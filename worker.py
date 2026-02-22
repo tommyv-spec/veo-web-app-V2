@@ -2424,14 +2424,19 @@ class JobWorker:
                 from google.genai import types
                 import base64
                 
-                # Get API key from the keys config
-                api_keys = get_gemini_keys_from_env()
-                if not api_keys:
-                    print("[Worker] No Gemini API keys available for Nano Banana Pro enhancement", flush=True)
-                    return frame_path  # Return original if no API key
+                # Get API key — dedicated NANO_BANANA_API_KEY first, then fall back to general Gemini keys
+                api_key = os.environ.get("NANO_BANANA_API_KEY", "").strip()
+                if not api_key:
+                    # Fallback to general Gemini keys pool
+                    api_keys = get_gemini_keys_from_env()
+                    if not api_keys:
+                        print("[Worker] No API key available for Nano Banana Pro enhancement (set NANO_BANANA_API_KEY env var)", flush=True)
+                        return frame_path  # Return original if no API key
+                    api_key = api_keys[0]
+                    print(f"[Worker] Using general Gemini key for Nano Banana (consider setting NANO_BANANA_API_KEY for a dedicated key)", flush=True)
+                else:
+                    print(f"[Worker] Using dedicated NANO_BANANA_API_KEY for enhancement", flush=True)
                 
-                # Use first available key
-                api_key = api_keys[0]
                 client = genai.Client(api_key=api_key)
                 
                 # Read the extracted frame
