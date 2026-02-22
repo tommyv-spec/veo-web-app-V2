@@ -1289,7 +1289,11 @@ Example: A realistic vertical video of a professional presenter speaking directl
                 
                 // Load API keys FIRST so onboarding can detect them
                 if (typeof loadApiKeys === 'function') {
+                    console.log('[Auth] Calling loadApiKeys...');
                     await loadApiKeys();
+                    console.log('[Auth] loadApiKeys done. userApiKeys:', typeof userApiKeys, Array.isArray(userApiKeys) ? userApiKeys.length : 'N/A');
+                } else {
+                    console.log('[Auth] loadApiKeys not yet defined!');
                 }
                 
                 // Show tutorial on first visit + start onboarding (keys are now loaded)
@@ -1384,6 +1388,7 @@ Example: A realistic vertical video of a professional presenter speaking directl
                 const data = await res.json();
                 userApiKeys = data.keys;
                 userApiKeysSummary = data.summary || {};
+                console.log('[LoadApiKeys] Loaded', userApiKeys.length, 'keys. has_keys:', data.has_keys, 'count:', data.count);
                 renderApiKeysList();
             } catch (e) {
                 console.error('Failed to load API keys:', e);
@@ -6327,11 +6332,19 @@ Example: A realistic vertical video of a professional presenter speaking directl
                 id: 'api_keys',
                 title: '🔑 Add Your API Keys',
                 check: () => {
-                    // Use the existing userApiKeys array (populated by loadApiKeys on page load)
-                    if (typeof userApiKeys !== 'undefined' && Array.isArray(userApiKeys) && userApiKeys.length > 0) return true;
-                    // Also check the DOM — the keys summary shows a count
-                    const summaryEl = document.getElementById('apiKeysSummary');
-                    if (summaryEl && summaryEl.style.display !== 'none' && summaryEl.innerHTML.trim()) return true;
+                    // Use the existing userApiKeys array (populated by loadApiKeys)
+                    const hasKeysVar = typeof userApiKeys !== 'undefined' && Array.isArray(userApiKeys) && userApiKeys.length > 0;
+                    console.log('[Onboarding] API key check — userApiKeys:', typeof userApiKeys, Array.isArray(userApiKeys) ? userApiKeys.length : 'N/A', 'hasKeys:', hasKeysVar);
+                    if (hasKeysVar) return true;
+                    // Also check the DOM — the keys list has items
+                    const listEl = document.getElementById('apiKeysList');
+                    if (listEl) {
+                        const keyItems = listEl.querySelectorAll('.api-key-item');
+                        if (keyItems.length > 0) {
+                            console.log('[Onboarding] API key check — found', keyItems.length, 'key items in DOM');
+                            return true;
+                        }
+                    }
                     return false;
                 },
                 content: () => `
@@ -6688,6 +6701,7 @@ Example: A realistic vertical video of a professional presenter speaking directl
                 
                 // If the step changed, navigate to it
                 if (shouldBe !== obLastDetermined) {
+                    console.log('[Onboarding] Poll detected change:', obLastDetermined, '→', shouldBe);
                     obLastDetermined = shouldBe;
                     
                     const steps = obGetActiveSteps();
@@ -6798,13 +6812,18 @@ Example: A realistic vertical video of a professional presenter speaking directl
         
         // Start the onboarding system
         async function obStart() {
+            console.log('[Onboarding] obStart called. userApiKeys:', typeof userApiKeys, Array.isArray(userApiKeys) ? userApiKeys.length : 'N/A');
             // Check if dismissed
             try {
-                if (localStorage.getItem(OB_DISMISSED_KEY) === 'true') return;
+                if (localStorage.getItem(OB_DISMISSED_KEY) === 'true') {
+                    console.log('[Onboarding] Dismissed, skipping');
+                    return;
+                }
             } catch(e) {}
             
             // Determine which step to show based on current app state
             obCurrentStep = obDetermineStep();
+            console.log('[Onboarding] Determined step:', obCurrentStep);
             obLastDetermined = obCurrentStep;
             
             // Load saved minimized preference
