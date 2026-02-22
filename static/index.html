@@ -1286,7 +1286,13 @@ Example: A realistic vertical video of a professional presenter speaking directl
                 const data = await response.json();
                 currentUser = data.user;
                 showUserInfo(currentUser);
-                // Show tutorial on first visit + start onboarding
+                
+                // Load API keys FIRST so onboarding can detect them
+                if (typeof loadApiKeys === 'function') {
+                    await loadApiKeys();
+                }
+                
+                // Show tutorial on first visit + start onboarding (keys are now loaded)
                 setTimeout(() => {
                     if (typeof checkShowTutorial === 'function') checkShowTutorial();
                     if (typeof checkShowOnboarding === 'function') checkShowOnboarding();
@@ -6314,14 +6320,20 @@ Example: A realistic vertical video of a professional presenter speaking directl
         const OB_DISMISSED_KEY = 'veo_onboarding_dismissed';
         let obCurrentStep = null;
         let obPollTimer = null;
-        let obApiKeyCount = 0;
         
         // Step definitions — each step has an id, condition checker, and content generator
         const OB_STEPS = [
             {
                 id: 'api_keys',
                 title: '🔑 Add Your API Keys',
-                check: () => obApiKeyCount > 0,
+                check: () => {
+                    // Use the existing userApiKeys array (populated by loadApiKeys on page load)
+                    if (typeof userApiKeys !== 'undefined' && Array.isArray(userApiKeys) && userApiKeys.length > 0) return true;
+                    // Also check the DOM — the keys summary shows a count
+                    const summaryEl = document.getElementById('apiKeysSummary');
+                    if (summaryEl && summaryEl.style.display !== 'none' && summaryEl.innerHTML.trim()) return true;
+                    return false;
+                },
                 content: () => `
                     <div class="ob-step-num">1</div>
                     <div class="ob-step-title">Add Your Gemini API Keys</div>
@@ -6672,9 +6684,6 @@ Example: A realistic vertical video of a professional presenter speaking directl
         let obLastDetermined = null;
         async function obPoll() {
             try {
-                // Always refresh API key count (awaited — ready before step check)
-                await obCheckApiKeys();
-                
                 const shouldBe = obDetermineStep();
                 
                 // If the step changed, navigate to it
@@ -6722,23 +6731,6 @@ Example: A realistic vertical video of a professional presenter speaking directl
             if (obPollTimer !== null) {
                 obPollTimer = setTimeout(obPoll, 1500);
             }
-        }
-        
-        async function obCheckApiKeys() {
-            try {
-                const r = await fetch('/api/user/keys');
-                if (r.ok) {
-                    const data = await r.json();
-                    // Response is { keys: [...], count: N, has_keys: bool }
-                    if (data.count !== undefined) {
-                        obApiKeyCount = data.count;
-                    } else if (data.keys && Array.isArray(data.keys)) {
-                        obApiKeyCount = data.keys.length;
-                    } else if (Array.isArray(data)) {
-                        obApiKeyCount = data.length;
-                    }
-                }
-            } catch(e) { /* ignore — will retry on next poll */ }
         }
         
         function obGoBack() {
@@ -6810,9 +6802,6 @@ Example: A realistic vertical video of a professional presenter speaking directl
             try {
                 if (localStorage.getItem(OB_DISMISSED_KEY) === 'true') return;
             } catch(e) {}
-            
-            // Do initial API key check BEFORE determining step
-            await obCheckApiKeys();
             
             // Determine which step to show based on current app state
             obCurrentStep = obDetermineStep();
