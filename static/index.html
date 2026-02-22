@@ -641,6 +641,155 @@
         .generating { animation: pulse 2s infinite; }
         .tip-text { font-size: 11px; color: var(--text-muted); margin-top: 10px; line-height: 1.5; }
         .tip-text strong { color: var(--text-secondary); }
+        
+        /* ====== Tutorial Overlay ====== */
+        .tutorial-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.92); backdrop-filter: blur(8px);
+            z-index: 99999; display: none; align-items: center; justify-content: center; padding: 0;
+        }
+        .tutorial-overlay.show { display: flex; }
+        .tutorial-modal {
+            background: var(--bg-primary); width: 100%; height: 100%; display: flex; flex-direction: column;
+            position: relative; overflow: hidden;
+        }
+        .tutorial-header {
+            background: linear-gradient(135deg, rgba(99,102,241,0.25), rgba(139,92,246,0.2));
+            border-bottom: 1px solid var(--border-color); padding: 16px 24px;
+            display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+        }
+        .tutorial-header h2 { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 10px; margin: 0; }
+        .tutorial-header h2 span.tut-icon {
+            background: linear-gradient(135deg, var(--accent), var(--accent2)); width: 36px; height: 36px;
+            border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-size: 18px;
+        }
+        .tutorial-body {
+            flex: 1; overflow-y: auto; padding: 0; scroll-behavior: smooth;
+        }
+        .tutorial-footer {
+            border-top: 1px solid var(--border-color); padding: 14px 24px; display: flex;
+            justify-content: space-between; align-items: center; flex-shrink: 0; background: var(--bg-surface);
+        }
+        .tutorial-footer .dont-show { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--text-secondary); }
+        .tutorial-footer .dont-show input[type=checkbox] {
+            width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer;
+        }
+        .tutorial-close-btn {
+            padding: 10px 28px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border: none;
+            border-radius: var(--radius-sm); color: white; font-weight: 600; font-size: 14px; cursor: pointer;
+            transition: all 0.2s; opacity: 0.35; pointer-events: none;
+        }
+        .tutorial-close-btn.enabled { opacity: 1; pointer-events: auto; }
+        .tutorial-close-btn.enabled:hover { transform: translateY(-1px); box-shadow: 0 4px 16px var(--accent-glow); }
+        .tutorial-scroll-hint {
+            position: absolute; bottom: 74px; left: 50%; transform: translateX(-50%);
+            background: var(--accent); color: white; padding: 8px 18px; border-radius: 99px;
+            font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px;
+            animation: tutBounce 2s ease-in-out infinite; pointer-events: none; z-index: 2;
+            box-shadow: 0 4px 20px rgba(99,102,241,0.4); transition: opacity 0.4s;
+        }
+        .tutorial-scroll-hint.hidden { opacity: 0; }
+        @keyframes tutBounce { 0%,100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(-6px); } }
+        .tutorial-progress {
+            height: 3px; background: var(--bg-elevated); flex-shrink: 0; position: relative;
+        }
+        .tutorial-progress-fill {
+            height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2));
+            width: 0%; transition: width 0.15s ease-out;
+        }
+        /* Tutorial content styling (inside iframe-like container) */
+        .tutorial-body .tut-content { padding: 0; }
+        .tutorial-body .tut-content .tut-hero {
+            background: linear-gradient(135deg, rgba(99,102,241,0.18), rgba(139,92,246,0.12));
+            border-bottom: 1px solid var(--border-color); padding: 48px 24px 40px; text-align: center;
+        }
+        .tutorial-body .tut-content .tut-hero h1 {
+            font-size: clamp(26px, 4vw, 40px); font-weight: 800;
+            background: linear-gradient(135deg, #818CF8, #C084FC);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 10px;
+        }
+        .tutorial-body .tut-content .tut-hero .tut-sub { font-size: 16px; color: var(--text-secondary); max-width: 560px; margin: 0 auto 16px; line-height: 1.6; }
+        .tutorial-body .tut-content .tut-hero .tut-ver { font-size: 12px; color: var(--text-muted); background: var(--bg-elevated); display: inline-block; padding: 4px 14px; border-radius: 99px; }
+        .tutorial-body .tut-container { max-width: 860px; margin: 0 auto; padding: 32px 24px 60px; }
+        .tutorial-body .tut-section { margin-bottom: 40px; }
+        .tutorial-body .tut-section h2 {
+            font-size: 22px; font-weight: 700; margin-bottom: 16px; padding-bottom: 8px;
+            border-bottom: 2px solid var(--accent); display: flex; align-items: center; gap: 10px;
+        }
+        .tutorial-body .tut-section h2 .tnum {
+            background: linear-gradient(135deg, var(--accent), var(--accent2)); color: white;
+            width: 32px; height: 32px; border-radius: 8px; display: inline-flex;
+            align-items: center; justify-content: center; font-size: 14px; font-weight: 700; flex-shrink: 0;
+        }
+        .tutorial-body .tut-section h3 { font-size: 17px; font-weight: 600; margin: 20px 0 10px; color: #C4B5FD; }
+        .tutorial-body .tut-section p { margin-bottom: 12px; color: var(--text-secondary); font-size: 14px; line-height: 1.7; }
+        .tut-callout {
+            background: var(--bg-surface); border-left: 4px solid var(--accent); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+            padding: 14px 18px; margin: 14px 0; font-size: 13px; color: var(--text-secondary); line-height: 1.6;
+        }
+        .tut-callout.tip { border-left-color: var(--success); }
+        .tut-callout.warn { border-left-color: var(--warning); }
+        .tut-callout .tut-label { font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; color: var(--accent); }
+        .tut-callout.tip .tut-label { color: var(--success); }
+        .tut-callout.warn .tut-label { color: var(--warning); }
+        .tut-flow {
+            display: flex; align-items: center; gap: 0; flex-wrap: wrap; justify-content: center; margin: 20px 0;
+        }
+        .tut-flow-item {
+            background: var(--bg-elevated); border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+            padding: 10px 14px; text-align: center; min-width: 100px;
+        }
+        .tut-flow-item .fi { font-size: 22px; margin-bottom: 2px; }
+        .tut-flow-item .fl { font-size: 11px; font-weight: 600; color: var(--text-primary); }
+        .tut-flow-item .fd { font-size: 9px; color: var(--text-muted); }
+        .tut-flow-arrow { font-size: 18px; color: var(--text-muted); padding: 0 4px; }
+        .tut-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin: 16px 0; }
+        .tut-feat {
+            background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 16px;
+        }
+        .tut-feat .tfi { font-size: 26px; margin-bottom: 6px; }
+        .tut-feat h4 { color: var(--text-primary); margin: 0 0 4px; font-size: 14px; }
+        .tut-feat p { margin: 0; font-size: 12px; }
+        .tut-table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+        .tut-table th, .tut-table td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border-color); }
+        .tut-table th { background: var(--bg-elevated); color: var(--text-primary); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .tut-table td { color: var(--text-secondary); }
+        .tut-comp { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0; }
+        .tut-comp > div { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 14px 18px; }
+        .tut-comp h4 { margin: 0 0 8px; font-size: 14px; }
+        .tut-comp ul { padding-left: 16px; font-size: 12px; color: var(--text-secondary); }
+        .tut-comp li { margin-bottom: 3px; }
+        .tut-step {
+            background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+            padding: 16px 20px; margin: 12px 0; position: relative;
+        }
+        .tut-step::before {
+            content: attr(data-step); position: absolute; top: -10px; left: 16px;
+            background: var(--accent); color: white; padding: 2px 10px; border-radius: 99px;
+            font-size: 11px; font-weight: 700;
+        }
+        .tut-step h4 { margin-top: 6px; color: var(--text-primary); font-size: 14px; }
+        .tut-step p { margin-top: 6px; font-size: 13px; }
+        .tut-ol { counter-reset: tsteps; list-style: none; padding: 0; }
+        .tut-ol li {
+            counter-increment: tsteps; padding: 8px 0 8px 40px; position: relative;
+            font-size: 14px; color: var(--text-secondary); border-bottom: 1px solid rgba(71,85,105,0.2);
+        }
+        .tut-ol li::before {
+            content: counter(tsteps); position: absolute; left: 0; top: 8px;
+            width: 28px; height: 28px; background: var(--bg-elevated); border: 1px solid var(--border-color);
+            border-radius: 6px; display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 12px; color: var(--accent);
+        }
+        .tut-code { background: var(--bg-elevated); border-radius: 4px; padding: 2px 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #FDE68A; }
+        @media (max-width: 600px) {
+            .tut-comp { grid-template-columns: 1fr; }
+            .tut-flow-arrow { display: none; }
+            .tut-grid { grid-template-columns: 1fr; }
+            .tutorial-footer { flex-direction: column; gap: 12px; }
+        }
+        /* Header tutorial button */
+        .btn-tutorial { background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.3); color: #818CF8; }
+        .btn-tutorial:hover { background: rgba(99,102,241,0.25); border-color: rgba(99,102,241,0.5); }
     </style>
 </head>
 <body>
@@ -654,6 +803,7 @@
                 <h1>Veo 3.1 Studio</h1>
             </div>
             <div class="header-actions">
+                <button class="btn btn-tutorial btn-sm" onclick="openTutorial()" title="How to use this platform">📖 Tutorial</button>
                 <button class="btn btn-secondary btn-sm btn-new-job" onclick="collapseResults()">➕ New Job</button>
                 <button class="btn btn-secondary btn-sm" onclick="refreshJobs()">🔄 Refresh</button>
                 
@@ -673,6 +823,9 @@
                         </div>
                         <div class="user-dropdown-item" onclick="openApiKeysModal()">
                             <span>🔑</span> API Keys
+                        </div>
+                        <div class="user-dropdown-item" onclick="document.getElementById('userDropdown').classList.remove('show');openTutorial();">
+                            <span>📖</span> Tutorial
                         </div>
                         <div class="user-dropdown-item logout" onclick="logout()">
                             <span>🚪</span> Sign Out
@@ -724,6 +877,276 @@
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" onclick="closeApiKeysModal()">Close</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tutorial Overlay -->
+        <div class="tutorial-overlay" id="tutorialOverlay">
+            <div class="tutorial-modal">
+                <div class="tutorial-header">
+                    <h2><span class="tut-icon">📖</span> Platform Tutorial</h2>
+                    <span style="font-size:12px;color:var(--text-muted);" id="tutorialScrollPct">0% read</span>
+                </div>
+                <div class="tutorial-progress"><div class="tutorial-progress-fill" id="tutorialProgressFill"></div></div>
+                <div class="tutorial-body" id="tutorialBody">
+                    <div class="tut-content">
+                        <div class="tut-hero">
+                            <h1>Veo 3.1 Video Generator</h1>
+                            <p class="tut-sub">Turn still images + dialogue scripts into realistic AI-generated videos where your subject speaks naturally</p>
+                            <span class="tut-ver">Complete Platform Guide</span>
+                        </div>
+                        <div class="tut-container">
+
+<!-- Section 1 -->
+<div class="tut-section">
+<h2><span class="tnum">1</span> What Can You Create?</h2>
+<p>This platform takes <strong>photos of people</strong> and <strong>dialogue text</strong>, and generates realistic video clips where the subject appears to speak your script — with lip-sync, natural gestures, and AI-generated voice.</p>
+<div class="tut-grid">
+    <div class="tut-feat"><div class="tfi">🎬</div><h4>Talking-Head Videos</h4><p>Upload a photo, provide dialogue — the AI animates them speaking naturally.</p></div>
+    <div class="tut-feat"><div class="tfi">📖</div><h4>Multi-Scene Stories</h4><p>Upload multiple images and write a full script with scene transitions.</p></div>
+    <div class="tut-feat"><div class="tfi">🌍</div><h4>5 Languages</h4><p>English, Italian, Spanish, French, or German with auto-split for each language.</p></div>
+    <div class="tut-feat"><div class="tfi">🎙️</div><h4>Voice Swapping</h4><p>Replace the AI voice with a cloned voice using OpenVoice or ElevenLabs.</p></div>
+</div>
+</div>
+
+<!-- Section 2 -->
+<div class="tut-section">
+<h2><span class="tnum">2</span> The Workflow</h2>
+<p>Every video follows this pipeline from start to finish:</p>
+<div class="tut-flow">
+    <div class="tut-flow-item"><div class="fi">🔐</div><div class="fl">Login</div><div class="fd">Google OAuth</div></div>
+    <span class="tut-flow-arrow">→</span>
+    <div class="tut-flow-item"><div class="fi">📤</div><div class="fl">Upload</div><div class="fd">1+ images</div></div>
+    <span class="tut-flow-arrow">→</span>
+    <div class="tut-flow-item"><div class="fi">⚙️</div><div class="fl">Settings</div><div class="fd">Configure</div></div>
+    <span class="tut-flow-arrow">→</span>
+    <div class="tut-flow-item"><div class="fi">✍️</div><div class="fl">Script</div><div class="fd">Dialogue</div></div>
+    <span class="tut-flow-arrow">→</span>
+    <div class="tut-flow-item"><div class="fi">🚀</div><div class="fl">Generate</div><div class="fd">AI clips</div></div>
+    <span class="tut-flow-arrow">→</span>
+    <div class="tut-flow-item"><div class="fi">✅</div><div class="fl">Review</div><div class="fd">Approve</div></div>
+    <span class="tut-flow-arrow">→</span>
+    <div class="tut-flow-item"><div class="fi">📥</div><div class="fl">Export</div><div class="fd">Download</div></div>
+</div>
+<p>Your script is broken into individual <strong>clips</strong> (~8 seconds each). Each clip is generated independently. You review and approve them, then export a stitched final video.</p>
+</div>
+
+<!-- Section 3 -->
+<div class="tut-section">
+<h2><span class="tnum">3</span> API Keys — How Jobs Are Processed</h2>
+<p>The platform has <strong>two processing backends</strong>. Which one is used depends on whether you have personal API keys:</p>
+<div class="tut-comp">
+    <div><h4 style="color:var(--success);">✅ With Your API Keys</h4><ul>
+        <li>Uses <strong>direct Google Veo API</strong></li>
+        <li>Faster processing</li>
+        <li>Uses your own Gemini API quota</li>
+        <li>You control rate limits</li>
+    </ul></div>
+    <div><h4 style="color:#818CF8;">🔄 Without API Keys</h4><ul>
+        <li>Uses <strong>Flow backend</strong> (browser automation)</li>
+        <li>No API key needed</li>
+        <li>Jobs are queued for workers</li>
+        <li>May be slower at peak times</li>
+    </ul></div>
+</div>
+<div class="tut-callout tip">
+    <div class="tut-label">💡 Managing Your Keys</div>
+    Click your <strong>profile avatar</strong> → <strong>"🔑 API Keys"</strong> to add keys. Get them at <strong>aistudio.google.com/apikey</strong> (they start with <span class="tut-code">AIzaSy...</span>). Add multiple keys for faster parallel generation.
+</div>
+</div>
+
+<!-- Section 4 -->
+<div class="tut-section">
+<h2><span class="tnum">4</span> Step 1 — Upload Images</h2>
+<p><strong>Drag & drop</strong> images onto the upload area, or click to browse. Accepted: <strong>PNG, JPG, WebP</strong>.</p>
+<table class="tut-table">
+    <tr><th>Images</th><th>Mode</th><th>Behavior</th></tr>
+    <tr><td><strong>1 image</strong></td><td>Simple Mode</td><td>Same image used for every clip. Best for single-speaker talking heads.</td></tr>
+    <tr><td><strong>2+ images</strong></td><td>Storyboard Mode</td><td>Images cycle through clips or are manually assigned. Enables scene transitions.</td></tr>
+</table>
+<div class="tut-callout tip">
+    <div class="tut-label">💡 Best Results</div>
+    Use clear, well-lit, front-facing photos. Clean backgrounds help the AI focus on the subject.
+</div>
+</div>
+
+<!-- Section 5 -->
+<div class="tut-section">
+<h2><span class="tnum">5</span> Step 2 — Configure Settings</h2>
+<table class="tut-table">
+    <tr><th>Setting</th><th>Options</th><th>What It Does</th></tr>
+    <tr><td><strong>Language</strong></td><td>EN, IT, ES, FR, DE</td><td>Dialogue language. Affects auto-split and speaking rate.</td></tr>
+    <tr><td><strong>Words/Line</strong></td><td>10–35 (default: 21)</td><td>Words per auto-split clip. Adjust for speaker speed.</td></tr>
+    <tr><td><strong>Duration</strong></td><td>4s, 6s, 8s</td><td>Clip length. <strong>8s required</strong> for interpolation & 1080p.</td></tr>
+    <tr><td><strong>Aspect Ratio</strong></td><td>16:9 / 9:16</td><td>Landscape (YouTube) or portrait (TikTok/Reels).</td></tr>
+    <tr><td><strong>Resolution</strong></td><td>720p / 1080p</td><td>Higher quality requires 8-second duration.</td></tr>
+    <tr><td><strong>Interpolation</strong></td><td>On/Off</td><td>Smooth motion between frames. <strong>Recommended ON.</strong></td></tr>
+    <tr><td><strong>AI Prompts</strong></td><td>On/Off</td><td>ON: AI optimizes visual prompts. OFF: write your own.</td></tr>
+</table>
+<h3>Context for AI (Optional)</h3>
+<p>The text area below the toggles lets you add info the AI can't see: speaker's role, mood, setting, voice style, etc.</p>
+<h3>Generation Mode (2+ Images, Auto-Cycle)</h3>
+<table class="tut-table">
+    <tr><th>Mode</th><th>How It Works</th><th>Best For</th></tr>
+    <tr><td><strong>🔀 Smart</strong></td><td>Odd clips first, then even clips use confirmed frames</td><td>Fast + smooth transitions</td></tr>
+    <tr><td><strong>⚡ Fast</strong></td><td>All clips simultaneously</td><td>Speed priority</td></tr>
+    <tr><td><strong>🔗 Safe</strong></td><td>One at a time, sequential</td><td>Max visual continuity</td></tr>
+</table>
+</div>
+
+<!-- Section 6 -->
+<div class="tut-section">
+<h2><span class="tnum">6</span> Step 3 — Write Your Script</h2>
+<p>The <strong>Dialogue Script</strong> editor is where you type the text your subject will speak. Each line = one video clip.</p>
+<h3>Auto-Split (Enabled by Default)</h3>
+<p>Paste an entire speech and the platform auto-splits it into ~7-second clips based on your language's speaking rate. Toggle the <strong>✂️ Auto-split</strong> switch to turn this on/off.</p>
+<h3>Manual Mode</h3>
+<p>With auto-split off, each line (separated by Enter) becomes exactly one clip. Full control over clip boundaries.</p>
+<div class="tut-callout warn">
+    <div class="tut-label">⚠️ Line Length</div>
+    If a line has more words than fit in your selected duration, audio may get cut off. The editor highlights problematic lines.
+</div>
+</div>
+
+<!-- Section 7 -->
+<div class="tut-section">
+<h2><span class="tnum">7</span> Step 4 — Generate</h2>
+<p>Click <strong>🚀 Start Generation</strong>. The platform validates your inputs, selects the backend, uploads frames to cloud storage, and begins creating clips.</p>
+<p>The interface splits into two panels:</p>
+<div class="tut-comp">
+    <div><h4>Left — Config & Jobs</h4><ul>
+        <li>Settings remain visible</li>
+        <li>"Jobs" card lists all your jobs</li>
+        <li>Progress bar per job</li>
+    </ul></div>
+    <div><h4>Right — Review Panel</h4><ul>
+        <li>Clip grid with live status</li>
+        <li>Video previews as clips complete</li>
+        <li>Real-time logs</li>
+    </ul></div>
+</div>
+<p>Each clip takes <strong>1–3 minutes</strong>. Clips process in parallel when possible, so a 10-clip job is much faster than 10×.</p>
+</div>
+
+<!-- Section 8 -->
+<div class="tut-section">
+<h2><span class="tnum">8</span> Step 5 — Review & Approve</h2>
+<p>Each completed clip shows a video preview. Play it, then decide:</p>
+<table class="tut-table">
+    <tr><th>Button</th><th>Action</th><th>Result</th></tr>
+    <tr><td><strong>✓ Approve</strong></td><td>Accept this clip</td><td>Green border — included in final export</td></tr>
+    <tr><td><strong>↻ Redo</strong></td><td>Regenerate</td><td>New attempt queued (up to 5 retries). Browse variants with ◀ ▶</td></tr>
+    <tr><td><strong>🗑 Delete</strong></td><td>Remove clip</td><td>Permanently removed from the job</td></tr>
+</table>
+<div class="tut-callout tip">
+    <div class="tut-label">💡 Pro Tip</div>
+    Don't wait for all clips to finish — approve good ones immediately and Redo bad ones. Redos process alongside remaining clips.
+</div>
+</div>
+
+<!-- Section 9 -->
+<div class="tut-section">
+<h2><span class="tnum">9</span> Step 6 — Export</h2>
+<h3>📥 Download All — Individual Clips</h3>
+<p>Downloads each approved clip as a separate MP4. Useful for external editing.</p>
+<h3>✂️ Export Final — Stitched Video</h3>
+<p>Merges all approved clips into one continuous video. The export dialog offers:</p>
+<table class="tut-table">
+    <tr><th>Option</th><th>Default</th><th>Purpose</th></tr>
+    <tr><td><strong>Trim Start/End Frames</strong></td><td>0 / 7</td><td>Remove static frames at clip boundaries for smoother joins</td></tr>
+    <tr><td><strong>Smart Trim</strong></td><td>ON</td><td>Preserves natural opening of first clip + scene cuts</td></tr>
+    <tr><td><strong>😂 Remove Laughter</strong></td><td>ON</td><td>Suppress AI-generated laughter artifacts</td></tr>
+    <tr><td><strong>🎛️ DeepFilterNet</strong></td><td>ON</td><td>AI noise removal (hiss, static) while preserving voice</td></tr>
+    <tr><td><strong>🎚️ Voice Filter</strong></td><td>OFF</td><td>Compressor/gate/limiter — can sound robotic</td></tr>
+    <tr><td><strong>📊 Loudness Norm</strong></td><td>ON</td><td>Broadcast standard volume (EBU R128, -16 LUFS)</td></tr>
+</table>
+</div>
+
+<!-- Section 10 -->
+<div class="tut-section">
+<h2><span class="tnum">10</span> Voice Swap</h2>
+<p>After export, replace the AI voice with a cloned real voice:</p>
+<div class="tut-comp">
+    <div><h4>🎙️ OpenVoice v2</h4><ul>
+        <li>Self-hosted, ~$0.01/run</li>
+        <li>Upload a voice sample</li>
+        <li>Adjustable similarity & pitch</li>
+    </ul></div>
+    <div><h4>🔊 ElevenLabs</h4><ul>
+        <li>Premium quality</li>
+        <li>Requires API key + Voice ID</li>
+        <li>Stability/similarity/style controls</li>
+    </ul></div>
+</div>
+</div>
+
+<!-- Section 11 -->
+<div class="tut-section">
+<h2><span class="tnum">11</span> Simple vs Storyboard Mode</h2>
+<h3>Simple Mode (1 Image)</h3>
+<p>One image used for all clips. Perfect for monologue-style content. UI shows: Images → Settings → Script editor.</p>
+<h3>Storyboard Mode (2+ Images)</h3>
+<p>Unlocks the Script Editor with two sub-modes:</p>
+<div class="tut-comp">
+    <div><h4>🔄 Auto-Cycle</h4><ul>
+        <li>Images cycle round-robin</li>
+        <li>Clip 1→Img 1, Clip 2→Img 2, etc.</li>
+        <li>Simplest multi-scene approach</li>
+    </ul></div>
+    <div><h4>🎬 Storyboard</h4><ul>
+        <li>Drag images to create scene breaks</li>
+        <li>Control transitions (blend/cut)</li>
+        <li>Choose clip mode per scene</li>
+    </ul></div>
+</div>
+</div>
+
+<!-- Section 12 -->
+<div class="tut-section">
+<h2><span class="tnum">12</span> Tips & Best Practices</h2>
+<div class="tut-step" data-step="Images"><h4>Choose clear, well-lit, front-facing photos</h4><p>Clean backgrounds help the AI. Avoid heavy filters or unusual angles.</p></div>
+<div class="tut-step" data-step="Script"><h4>Write natural dialogue</h4><p>Use contractions and natural sentence lengths. Let auto-split handle line breaks, then adjust.</p></div>
+<div class="tut-step" data-step="Settings"><h4>Use 8s + Interpolation ON</h4><p>Produces the most natural motion and gives the AI room for smooth delivery.</p></div>
+<div class="tut-step" data-step="Keys"><h4>Add 3–5 API keys</h4><p>The platform rotates between them, avoiding rate limits and enabling parallel generation.</p></div>
+<div class="tut-step" data-step="Review"><h4>Review as clips complete</h4><p>Approve good clips immediately. Redo bad ones — they process alongside remaining work.</p></div>
+<div class="tut-step" data-step="Export"><h4>Keep Smart Trim + audio enhancements ON</h4><p>Smoother clip transitions and cleaner audio in the final export.</p></div>
+</div>
+
+<!-- Section 13 -->
+<div class="tut-section">
+<h2><span class="tnum">13</span> Troubleshooting</h2>
+<table class="tut-table">
+    <tr><th>Problem</th><th>Solution</th></tr>
+    <tr><td>Can't start generation</td><td>Check images uploaded, script not empty, settings compatible (1080p needs 8s)</td></tr>
+    <tr><td>Clips keep failing</td><td>Re-check API keys. Add more if rate-limited.</td></tr>
+    <tr><td>Job stuck on "pending"</td><td>Flow backend jobs are queued — wait for a worker slot.</td></tr>
+    <tr><td>No speech audio</td><td>Ensure each line has meaningful text. Very short lines may produce silence.</td></tr>
+    <tr><td>Export: "No approved clips"</td><td>Go to Review panel and ✓ Approve clips first.</td></tr>
+    <tr><td>Redo doesn't work</td><td>Check logs — if cloud storage wasn't configured, redos fail after restarts.</td></tr>
+    <tr><td>Bad voice swap audio</td><td>Use clear, 5–15 second voice samples with no background noise.</td></tr>
+</table>
+<div class="tut-callout">
+    <div class="tut-label">ℹ️ Logs</div>
+    Every job has a logs section at the bottom of the Review panel. Check there first when something goes wrong.
+</div>
+</div>
+
+<!-- End marker for scroll detection -->
+<div id="tutorialEndMarker" style="height:1px;"></div>
+
+                        </div>
+                    </div>
+                </div>
+                <div class="tutorial-scroll-hint" id="tutorialScrollHint">↓ Scroll to read the full tutorial</div>
+                <div class="tutorial-footer">
+                    <label class="dont-show">
+                        <input type="checkbox" id="tutorialDontShow">
+                        Don't show this again
+                    </label>
+                    <button class="tutorial-close-btn" id="tutorialCloseBtn" onclick="closeTutorial()">
+                        Got it — Let's Go!
+                    </button>
                 </div>
             </div>
         </div>
@@ -5995,6 +6418,114 @@ Example: A realistic vertical video of a professional presenter speaking directl
                 }
             }
         });
+        
+        // =============================================================================
+        // Tutorial System
+        // =============================================================================
+        const TUTORIAL_STORAGE_KEY = 'veo_tutorial_dismissed';
+        let tutorialHasReachedBottom = false;
+        
+        function openTutorial() {
+            const overlay = document.getElementById('tutorialOverlay');
+            const body = document.getElementById('tutorialBody');
+            const closeBtn = document.getElementById('tutorialCloseBtn');
+            const hint = document.getElementById('tutorialScrollHint');
+            const progressFill = document.getElementById('tutorialProgressFill');
+            const pctLabel = document.getElementById('tutorialScrollPct');
+            
+            // Reset state
+            tutorialHasReachedBottom = false;
+            body.scrollTop = 0;
+            closeBtn.classList.remove('enabled');
+            hint.classList.remove('hidden');
+            progressFill.style.width = '0%';
+            pctLabel.textContent = '0% read';
+            document.getElementById('tutorialDontShow').checked = false;
+            
+            // Show overlay
+            overlay.classList.add('show');
+            document.body.style.overflow = 'hidden';
+            
+            // Attach scroll listener
+            body.removeEventListener('scroll', handleTutorialScroll);
+            body.addEventListener('scroll', handleTutorialScroll);
+        }
+        
+        function handleTutorialScroll() {
+            const body = document.getElementById('tutorialBody');
+            const closeBtn = document.getElementById('tutorialCloseBtn');
+            const hint = document.getElementById('tutorialScrollHint');
+            const progressFill = document.getElementById('tutorialProgressFill');
+            const pctLabel = document.getElementById('tutorialScrollPct');
+            
+            const scrollTop = body.scrollTop;
+            const scrollHeight = body.scrollHeight - body.clientHeight;
+            
+            if (scrollHeight <= 0) {
+                // Content fits without scrolling — enable immediately
+                tutorialHasReachedBottom = true;
+                closeBtn.classList.add('enabled');
+                hint.classList.add('hidden');
+                progressFill.style.width = '100%';
+                pctLabel.textContent = '100% read';
+                return;
+            }
+            
+            const pct = Math.min(100, Math.round((scrollTop / scrollHeight) * 100));
+            progressFill.style.width = pct + '%';
+            pctLabel.textContent = pct + '% read';
+            
+            // Hide scroll hint after 15% scrolled
+            if (pct > 15) {
+                hint.classList.add('hidden');
+            }
+            
+            // Enable close button when user reaches ~95% (near bottom)
+            if (pct >= 95 && !tutorialHasReachedBottom) {
+                tutorialHasReachedBottom = true;
+                closeBtn.classList.add('enabled');
+            }
+        }
+        
+        function closeTutorial() {
+            if (!tutorialHasReachedBottom) return; // Can't close until scrolled
+            
+            const overlay = document.getElementById('tutorialOverlay');
+            const dontShow = document.getElementById('tutorialDontShow').checked;
+            
+            overlay.classList.remove('show');
+            document.body.style.overflow = '';
+            
+            if (dontShow) {
+                try { localStorage.setItem(TUTORIAL_STORAGE_KEY, 'true'); } catch(e) {}
+            }
+        }
+        
+        // Show tutorial on first visit (after auth check completes)
+        function checkShowTutorial() {
+            try {
+                if (localStorage.getItem(TUTORIAL_STORAGE_KEY) === 'true') return;
+            } catch(e) {}
+            // Small delay so the page renders first
+            setTimeout(() => openTutorial(), 600);
+        }
+        
+        // Hook into auth flow — show tutorial after successful login
+        const _origCheckAuth = checkAuth;
+        checkAuth = async function() {
+            const result = await _origCheckAuth();
+            if (result) {
+                checkShowTutorial();
+            }
+            return result;
+        };
+        // Re-trigger since checkAuth already ran at page load
+        (async () => {
+            try {
+                const r = await fetch('/auth/me');
+                if (r.ok) checkShowTutorial();
+            } catch(e) {}
+        })();
     </script>
 </body>
 </html>
