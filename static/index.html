@@ -1500,6 +1500,10 @@ Example: A realistic vertical video of a professional presenter speaking directl
                 const data = await response.json();
                 currentUser = data.user;
                 showUserInfo(currentUser);
+                // Show tutorial on first visit (after successful auth)
+                setTimeout(() => {
+                    if (typeof checkShowTutorial === 'function') checkShowTutorial();
+                }, 600);
                 return true;
             } catch (error) {
                 console.error('Auth check failed:', error);
@@ -6506,26 +6510,8 @@ Example: A realistic vertical video of a professional presenter speaking directl
             try {
                 if (localStorage.getItem(TUTORIAL_STORAGE_KEY) === 'true') return;
             } catch(e) {}
-            // Small delay so the page renders first
-            setTimeout(() => openTutorial(), 600);
+            openTutorial();
         }
-        
-        // Hook into auth flow — show tutorial after successful login
-        const _origCheckAuth = checkAuth;
-        checkAuth = async function() {
-            const result = await _origCheckAuth();
-            if (result) {
-                checkShowTutorial();
-            }
-            return result;
-        };
-        // Re-trigger since checkAuth already ran at page load
-        (async () => {
-            try {
-                const r = await fetch('/auth/me');
-                if (r.ok) checkShowTutorial();
-            } catch(e) {}
-        })();
     </script>
 </body>
 </html>
