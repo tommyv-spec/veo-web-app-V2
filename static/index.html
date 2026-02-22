@@ -65,7 +65,7 @@
         .config-panel.storyboard-active .generate-container { order: 4; }
         .config-panel.storyboard-active #jobsCard { order: 5; }
         
-        .header { background: var(--bg-surface); border-bottom: 1px solid var(--border-color); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; height: 64px; }
+        .header { background: var(--bg-surface); border-bottom: 1px solid var(--border-color); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; height: 64px; position: relative; z-index: 9500; }
         .logo { display: flex; align-items: center; gap: 12px; }
         .logo-icon { width: 40px; height: 40px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; font-size: 20px; box-shadow: 0 4px 12px var(--accent-glow); }
         .logo h1 { font-size: 18px; font-weight: 600; }
@@ -80,7 +80,7 @@
         .user-avatar { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent2)); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; overflow: hidden; }
         .user-avatar img { width: 100%; height: 100%; object-fit: cover; }
         .user-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .user-dropdown { position: absolute; top: 100%; right: 0; margin-top: 8px; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); min-width: 200px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); display: none; z-index: 1000; }
+        .user-dropdown { position: absolute; top: 100%; right: 0; margin-top: 8px; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); min-width: 200px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); display: none; z-index: 10000; }
         .user-dropdown.show { display: block; }
         .user-dropdown-header { padding: 12px 16px; border-bottom: 1px solid var(--border-color); }
         .user-dropdown-email { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
@@ -6346,7 +6346,15 @@ Example: A realistic vertical video of a professional presenter speaking directl
             {
                 id: 'upload_images',
                 title: '📤 Upload Images',
-                check: () => uploadedImages.length > 0,
+                check: () => {
+                    // Check multiple signals for image upload
+                    if (uploadedImages.length > 0) return true;
+                    if (uploadedFilesData.length > 0) return true;
+                    // Also check DOM — the upload area shows a count
+                    const countEl = document.getElementById('uploadedCount');
+                    if (countEl && countEl.textContent.includes('✓')) return true;
+                    return false;
+                },
                 content: () => `
                     <div class="ob-step-num">2</div>
                     <div class="ob-step-title">Upload Your Images</div>
@@ -6367,7 +6375,7 @@ Example: A realistic vertical video of a professional presenter speaking directl
             {
                 id: 'mode_single',
                 title: '⚙️ Single Image Mode',
-                condition: () => uploadedImages.length === 1,
+                condition: () => (uploadedImages.length === 1 || uploadedFilesData.length === 1),
                 check: () => {
                     const ta = document.getElementById('dialogueScript');
                     return ta && ta.value.trim().length > 10;
@@ -6409,7 +6417,7 @@ Example: A realistic vertical video of a professional presenter speaking directl
             {
                 id: 'mode_autocycle',
                 title: '🔄 Auto-Cycle Mode',
-                condition: () => uploadedImages.length >= 2 && editorMode === 'auto',
+                condition: () => (uploadedImages.length >= 2 || uploadedFilesData.length >= 2) && editorMode === 'auto',
                 check: () => {
                     const lines = getDialogueLines();
                     return lines && lines.length > 0 && lines[0].trim().length > 5;
@@ -6418,7 +6426,7 @@ Example: A realistic vertical video of a professional presenter speaking directl
                     <div class="ob-step-num">3</div>
                     <div class="ob-step-title">Auto-Cycle Mode — Settings, Script & Scenes</div>
                     <div class="ob-step-desc">
-                        <p>You uploaded <strong>${uploadedImages.length} images</strong> in <strong>Auto-Cycle</strong> mode. Images rotate through clips automatically: Clip 1 → Image 1, Clip 2 → Image 2, ${uploadedImages.length > 2 ? 'Clip 3 → Image 3, ' : ''}then back to Image 1.</p>
+                        <p>You uploaded <strong>${uploadedImages.length || uploadedFilesData.length} images</strong> in <strong>Auto-Cycle</strong> mode. Images rotate through clips automatically: Clip 1 → Image 1, Clip 2 → Image 2, ${(uploadedImages.length || uploadedFilesData.length) > 2 ? 'Clip 3 → Image 3, ' : ''}then back to Image 1.</p>
                     </div>
                     
                     <div class="ob-step-desc"><strong style="color:var(--text-primary);font-size:14px;">⚙️ Settings</strong></div>
@@ -6457,7 +6465,7 @@ Example: A realistic vertical video of a professional presenter speaking directl
             {
                 id: 'mode_storyboard',
                 title: '🎬 Storyboard Mode',
-                condition: () => uploadedImages.length >= 2 && editorMode === 'storyboard',
+                condition: () => (uploadedImages.length >= 2 || uploadedFilesData.length >= 2) && editorMode === 'storyboard',
                 check: () => {
                     const lines = getDialogueLines();
                     return lines && lines.length > 0 && lines[0].trim().length > 5;
@@ -6466,7 +6474,7 @@ Example: A realistic vertical video of a professional presenter speaking directl
                     <div class="ob-step-num">3</div>
                     <div class="ob-step-title">Storyboard Mode — Full Control</div>
                     <div class="ob-step-desc">
-                        <p>You're in <strong>Storyboard</strong> mode with <strong>${uploadedImages.length} images</strong>. This gives you complete control over which image appears in which clips, and how scenes transition.</p>
+                        <p>You're in <strong>Storyboard</strong> mode with <strong>${uploadedImages.length || uploadedFilesData.length} images</strong>. This gives you complete control over which image appears in which clips, and how scenes transition.</p>
                     </div>
                     
                     <div class="ob-step-desc"><strong style="color:var(--text-primary);font-size:14px;">⚙️ Settings (same as other modes)</strong></div>
@@ -6660,51 +6668,56 @@ Example: A realistic vertical video of a professional presenter speaking directl
         
         // Poll app state and auto-navigate to the right step
         let obLastDetermined = null;
-        function obPoll() {
-            // Async check for API keys
-            obCheckApiKeys();
+        let obPollRunning = false;
+        async function obPoll() {
+            if (obPollRunning) return; // Prevent overlapping polls
+            obPollRunning = true;
             
-            const shouldBe = obDetermineStep();
-            
-            // If the step changed, navigate to it
-            if (shouldBe !== obLastDetermined) {
-                obLastDetermined = shouldBe;
+            try {
+                // Always refresh API key count
+                await obCheckApiKeys();
                 
-                // Only auto-navigate if user hasn't manually browsed away
-                // (we auto-navigate when the determined step is AHEAD of current)
-                const steps = obGetActiveSteps();
-                const currentIdx = steps.findIndex(s => s.id === obCurrentStep);
-                const targetIdx = steps.findIndex(s => s.id === shouldBe);
+                const shouldBe = obDetermineStep();
                 
-                if (targetIdx > currentIdx || currentIdx < 0) {
-                    // Step completed — show brief success then advance
-                    const statusEl = document.querySelector('#obBody .ob-status.waiting');
-                    if (statusEl) {
-                        statusEl.className = 'ob-status done';
-                        statusEl.innerHTML = '✅ Done! Moving on...';
-                        setTimeout(() => {
+                // If the step changed, navigate to it
+                if (shouldBe !== obLastDetermined) {
+                    obLastDetermined = shouldBe;
+                    
+                    const steps = obGetActiveSteps();
+                    const currentIdx = steps.findIndex(s => s.id === obCurrentStep);
+                    const targetIdx = steps.findIndex(s => s.id === shouldBe);
+                    
+                    if (targetIdx > currentIdx || currentIdx < 0) {
+                        // Step completed — show brief success then advance
+                        const statusEl = document.querySelector('#obBody .ob-status.waiting');
+                        if (statusEl) {
+                            statusEl.className = 'ob-status done';
+                            statusEl.innerHTML = '✅ Done! Moving on...';
+                            setTimeout(() => {
+                                obCurrentStep = shouldBe;
+                                obRender();
+                            }, 800);
+                        } else {
                             obCurrentStep = shouldBe;
                             obRender();
-                        }, 800);
-                    } else {
+                        }
+                    } else if (targetIdx < currentIdx) {
+                        // User went backwards (e.g. deleted images) — follow them back
                         obCurrentStep = shouldBe;
                         obRender();
                     }
-                } else if (targetIdx < currentIdx) {
-                    // User went backwards (e.g. deleted images) — follow them back
-                    obCurrentStep = shouldBe;
+                }
+                
+                // Re-check if mode branch changed (auto-cycle ↔ storyboard)
+                const steps = obGetActiveSteps();
+                const currentInSteps = steps.findIndex(s => s.id === obCurrentStep);
+                if (currentInSteps < 0) {
+                    obCurrentStep = obDetermineStep();
+                    obLastDetermined = obCurrentStep;
                     obRender();
                 }
-                // If targetIdx === currentIdx, we're already showing the right step
-            }
-            
-            // Also re-check if the step content should update (e.g. mode changed from auto to storyboard)
-            const steps = obGetActiveSteps();
-            const currentInSteps = steps.findIndex(s => s.id === obCurrentStep);
-            if (currentInSteps < 0) {
-                // Current step no longer exists in active steps (mode changed) — re-determine
-                obCurrentStep = obDetermineStep();
-                obRender();
+            } finally {
+                obPollRunning = false;
             }
         }
         
@@ -6713,10 +6726,16 @@ Example: A realistic vertical video of a professional presenter speaking directl
                 const r = await fetch('/api/user/keys');
                 if (r.ok) {
                     const data = await r.json();
-                    const keys = data.keys || data || [];
-                    obApiKeyCount = Array.isArray(keys) ? keys.length : 0;
+                    // Response is { keys: [...], count: N, has_keys: bool }
+                    if (data.count !== undefined) {
+                        obApiKeyCount = data.count;
+                    } else if (data.keys && Array.isArray(data.keys)) {
+                        obApiKeyCount = data.keys.length;
+                    } else if (Array.isArray(data)) {
+                        obApiKeyCount = data.length;
+                    }
                 }
-            } catch(e) { /* ignore */ }
+            } catch(e) { /* ignore — will retry on next poll */ }
         }
         
         function obGoBack() {
