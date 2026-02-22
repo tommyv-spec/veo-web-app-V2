@@ -6363,9 +6363,13 @@ Example: A realistic vertical video of a professional presenter speaking directl
                         <li>Click your <strong>profile avatar</strong> (top-right) → <strong>"🔑 API Keys"</strong> → paste it</li>
                     </ol>
                     <div class="ob-tip"><strong>💡 Tip:</strong> Create 1 key per project, max 2 projects per Gmail. Each project has independent rate limits.</div>
-                    <div class="ob-status waiting" id="obKeyStatus">
-                        <span class="ob-spinner">⏳</span> Waiting for you to add an API key...
-                    </div>
+                    ${(() => {
+                        const hasKeys = (typeof userApiKeys !== 'undefined' && Array.isArray(userApiKeys) && userApiKeys.length > 0)
+                            || (document.getElementById('apiKeysList')?.querySelectorAll('.api-key-item').length > 0);
+                        return hasKeys
+                            ? '<div class="ob-status done" id="obKeyStatus">✅ API keys detected — you\'re all set!</div>'
+                            : '<div class="ob-status waiting" id="obKeyStatus"><span class="ob-spinner">⏳</span> Waiting for you to add an API key...</div>';
+                    })()}
                 `,
             },
             {
@@ -6392,9 +6396,13 @@ Example: A realistic vertical video of a professional presenter speaking directl
                         <li><strong>2+ images</strong> → <strong>Multi-scene mode</strong> — unlocks <strong>Auto-Cycle</strong> (images rotate automatically) and <strong>Storyboard</strong> (full manual control over scenes, transitions, and clip behavior).</li>
                     </ol>
                     <div class="ob-tip"><strong>💡 Tip:</strong> Use clear, well-lit, front-facing photos. Clean backgrounds help the AI focus on the subject. You can always add more images later to switch modes.</div>
-                    <div class="ob-status waiting">
-                        <span class="ob-spinner">⏳</span> Waiting for image upload...
-                    </div>
+                    ${(() => {
+                        const hasImages = (uploadedImages.length > 0) || (uploadedFilesData.length > 0)
+                            || (document.getElementById('uploadedCount')?.textContent.includes('✓'));
+                        return hasImages
+                            ? '<div class="ob-status done">✅ Images uploaded — ready to go!</div>'
+                            : '<div class="ob-status waiting"><span class="ob-spinner">⏳</span> Waiting for image upload...</div>';
+                    })()}
                 `,
             },
             {
